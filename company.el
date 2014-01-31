@@ -476,7 +476,7 @@ immediately when a prefix of `company-minimum-prefix-length' is reached."
                  (const :tag "immediate (t)" t)
                  (number :tag "seconds")))
 
-(defcustom company-begin-commands '(self-insert-command org-self-insert-command)
+(defcustom company-begin-commands '(self-insert-command)
   "A list of commands after which idle completion is allowed.
 If this is t, it can show completions after any command.  See
 `company-idle-delay'.
@@ -520,7 +520,7 @@ treated as if it was on this list."
     (define-key keymap (kbd "RET") 'company-complete-selection)
     (define-key keymap [tab] 'company-complete-common)
     (define-key keymap (kbd "TAB") 'company-complete-common)
-    (define-key keymap (kbd "<f1>") 'company-show-doc-buffer)
+    (define-key keymap (kbd "M-d") 'company-show-doc-buffer)
     (define-key keymap "\C-w" 'company-show-location)
     (define-key keymap "\C-s" 'company-search-candidates)
     (define-key keymap "\C-\M-s" 'company-filter-candidates)
@@ -530,6 +530,49 @@ treated as if it was on this list."
 
     keymap)
   "Keymap that is enabled during an active completion.")
+
+(defvar company-accept-and-insert-list '(" " "." "," "/" ";" ":" "?" "!" "-"
+                                         "[" "]" "(" ")" "{" "}" "|" "\\" "'"
+                                         "<" ">" "\M-(" "\""
+                                         "\C-a" "\C-e" "\C-f" "\C-b" "\C-n"
+                                         "\C-p" "\M-f" "\M-b" "\M-a" "\M-e" ))
+(defvar company-reject-and-insert-list nil)
+
+(defvar company-manual-map
+  (let ((keymap (make-sparse-keymap)))
+    (define-key keymap "\e\e\e" 'company-abort)
+    (define-key keymap "\C-g" 'company-abort)
+    (define-key keymap (kbd "M-n") 'company-select-next)
+    (define-key keymap (kbd "M-p") 'company-select-previous)
+    (define-key keymap (kbd "<down>") 'company-select-next-or-abort)
+    (define-key keymap (kbd "<up>") 'company-select-previous-or-abort)
+    (define-key keymap [down-mouse-1] 'ignore)
+    (define-key keymap [down-mouse-3] 'ignore)
+    (define-key keymap [mouse-1] 'company-complete-mouse)
+    (define-key keymap [mouse-3] 'company-select-mouse)
+    (define-key keymap [up-mouse-1] 'ignore)
+    (define-key keymap [up-mouse-3] 'ignore)
+    (define-key keymap [return] 'company-complete-selection)
+    (define-key keymap (kbd "RET") 'company-complete-selection)
+    (define-key keymap [tab] 'company-complete-common)
+    (define-key keymap (kbd "TAB") 'company-complete-common)
+    (define-key keymap (kbd "M-d") 'company-show-doc-buffer)
+    (define-key keymap "\C-w" 'company-show-location)
+    (define-key keymap "\C-s" 'company-search-candidates)
+    (define-key keymap "\C-\M-s" 'company-filter-candidates)
+    (define-key keymap "\M-." 'company-filter-candidates)
+    (define-key keymap "\M-/" 'company-other-backend)
+    (dolist (key company-accept-and-insert-list)
+      (define-key keymap key 'company-accept-and-pass-through))
+    (dolist (key company-reject-and-insert-list)
+      (define-key keymap key 'company-reject-and-pass-through))
+    (dotimes (i 10)
+      (define-key keymap (vector (+ (aref (kbd "M-0") 0) i))
+        `(lambda () (interactive) (company-complete-number ,i))))
+
+    keymap)
+  "Keymap that is enabled during an active completion.")
+
 
 (defvar company--disabled-backends nil)
 
@@ -690,16 +733,18 @@ means that `company-mode' is always turned on except in `message-mode' buffers."
   (company-grab regexp expression (point-at-bol)))
 
 (defun company-grab-symbol ()
-  (if (looking-at "\\_>")
-      (buffer-substring (point) (save-excursion (skip-syntax-backward "w_")
-                                                (point)))
+  (if (or (company-explicit-action-p) (looking-at "\\_>"))
+      (buffer-substring-no-properties (point)
+                                      (save-excursion (skip-syntax-backward "w_")
+                                                      (point)))
     (unless (and (char-after) (memq (char-syntax (char-after)) '(?w ?_)))
       "")))
 
 (defun company-grab-word ()
-  (if (looking-at "\\>")
-      (buffer-substring (point) (save-excursion (skip-syntax-backward "w")
-                                                (point)))
+  (if (or (company-explicit-action-p) (looking-at "\\>"))
+      (buffer-substring-no-properties (point)
+                                      (save-excursion (skip-syntax-backward "w")
+                                                      (point)))
     (unless (and (char-after) (eq (char-syntax (char-after)) ?w))
       "")))
 
@@ -1030,6 +1075,7 @@ Keywords and function definition names are ignored."
     (unless company-candidates
       (setq company--explicit-action nil))))
 
+;;;###autoload
 (defun company-other-backend (&optional backward)
   (interactive (list current-prefix-arg))
   (company-assert-enabled)
@@ -1046,6 +1092,24 @@ Keywords and function definition names are ignored."
     (company-manual-begin))
   (unless company-candidates
     (error "No other back-end")))
+
+(defsubst company-pass-through ()
+  (let* ((event-vec (vector last-input-event))
+         (local-map (current-local-map))
+         (command
+          (or (and local-map (lookup-key local-map event-vec))
+              (lookup-key (current-global-map) event-vec))))
+    (when (commandp command) (call-interactively command))))
+
+(defun company-accept-and-pass-through ()
+  (interactive)
+  (company-complete-selection)
+  (company-pass-through))
+
+(defun company-reject-and-pass-through ()
+  (interactive)
+  (company-abort)
+  (company-pass-through))
 
 (defun company-require-match-p ()
   (let ((backend-value (company-call-backend 'require-match)))
@@ -1144,23 +1208,26 @@ Keywords and function definition names are ignored."
                             (company-init-backend backend)))
                   (funcall backend 'prefix))
               (company--multi-backend-adapter backend 'prefix)))
-      (when prefix
-        (when (company--good-prefix-p prefix)
-          (setq prefix (or (car-safe prefix) prefix)
-                company-backend backend
-                c (company-calculate-candidates prefix))
-          ;; t means complete/unique.  We don't start, so no hooks.
-          (if (not (consp c))
-              (when company--explicit-action
-                (message "No completion found"))
-            (setq company-prefix prefix)
-            (when (symbolp backend)
-              (setq company-lighter (concat " " (symbol-name backend))))
-            (company-update-candidates c)
-            (run-hook-with-args 'company-completion-started-hook
-                                (company-explicit-action-p))
-            (company-call-frontends 'show)))
-        (return c)))))
+      (cond
+       ((company--good-prefix-p prefix)
+        (setq prefix (or (car-safe prefix) prefix)
+              company-backend backend
+              c (company-calculate-candidates prefix))
+        ;; t means complete/unique.  We don't start, so no hooks.
+        (if (not (consp c))
+            (when company--explicit-action
+              (message "No completion found"))
+          (setq company-prefix prefix)
+          (when (symbolp backend)
+            (setq company-lighter (concat " " (symbol-name backend))))
+          (company-update-candidates c)
+          (run-hook-with-args 'company-completion-started-hook
+                              (company-explicit-action-p))
+          (company-call-frontends 'show))
+        (return c))
+       ((and (eq prefix 'stop)
+             (not (company-explicit-action-p)))
+        (return nil))))))
 
 (defun company-begin ()
   (or (and company-candidates (company--continue))
@@ -1169,7 +1236,11 @@ Keywords and function definition names are ignored."
     (setq company-point (point)
           company--point-max (point-max))
     (company-ensure-emulation-alist)
-    (company-enable-overriding-keymap company-active-map)
+    (if (not company--explicit-action)
+        (company-enable-overriding-keymap company-active-map)
+      (company-enable-overriding-keymap company-manual-map)
+      (company-search-mode 1)
+      (company-enable-overriding-keymap company-explicit-map))
     (company-call-frontends 'update)))
 
 (defun company-cancel (&optional result)
@@ -1387,7 +1458,7 @@ Don't start this directly, use `company-search-candidates' or
 `company-filter-candidates'."
   nil company-search-lighter nil
   (if company-search-mode
-      (if (company-manual-begin)
+      (if (or company--explicit-action (company-manual-begin))
           (progn
             (setq company-search-old-selection company-selection)
             (company-call-frontends 'update))
@@ -1423,6 +1494,26 @@ uses the search string to limit the completion candidates."
   (let ((keymap (make-keymap)))
     (define-key keymap [remap company-search-printing-char]
       'company-filter-printing-char)
+    (set-keymap-parent keymap company-search-map)
+    keymap)
+  "Keymap used for incrementally searching the completion candidates.")
+
+(defvar company-explicit-map
+  (let ((keymap (make-keymap)))
+    (define-key keymap [remap company-search-printing-char]
+      'company-filter-printing-char)
+    (define-key keymap (kbd "C-g") 'company-abort)
+    (define-key keymap (kbd "M-n") 'company-select-next)
+    (define-key keymap (kbd "M-p") 'company-select-previous)
+    (define-key keymap (kbd "<down>") 'company-select-next)
+    (define-key keymap (kbd "<up>") 'company-select-previous)
+    (define-key keymap "\M-/" 'company-other-backend)
+
+    (dolist (key company-accept-and-insert-list)
+      (define-key keymap key 'company-accept-and-pass-through))
+    (dolist (key company-reject-and-insert-list)
+      (define-key keymap key 'company-reject-and-pass-through))
+
     (set-keymap-parent keymap company-search-map)
     keymap)
   "Keymap used for incrementally searching the completion candidates.")
@@ -1759,7 +1850,7 @@ Example: \(company-begin-with '\(\"foo\" \"foobar\" \"foobarbaz\"\)\)"
 
   limit)
 
-(defun company-tooltip--simple-update-offset (selection num-lines limit)
+(defun company-tooltip--simple-update-offset (selection limit)
   (setq company-tooltip-offset
         (if (< selection company-tooltip-offset)
             selection
@@ -1846,7 +1937,7 @@ Example: \(company-begin-with '\(\"foo\" \"foobar\" \"foobarbaz\"\)\)"
     ;; Scroll to offset.
     (if (eq company-tooltip-offset-display 'lines)
         (setq limit (company-tooltip--lines-update-offset selection len limit))
-      (company-tooltip--simple-update-offset selection len limit))
+      (company-tooltip--simple-update-offset selection limit))
 
     (cond
      ((eq company-tooltip-offset-display 'scrollbar)

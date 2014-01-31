@@ -70,23 +70,25 @@ See also `company-dabbrev-time-limit'."
 
 (defsubst company-dabbrev--make-regexp (prefix)
   (concat "\\<" (if (equal prefix "")
-              company-dabbrev-char-regexp
-            (regexp-quote prefix))
+                    company-dabbrev-char-regexp
+                  (regexp-quote prefix))
           "\\(" company-dabbrev-char-regexp "\\)*\\>"))
 
 (defun company-dabbrev--search-buffer (regexp pos symbols start limit
-                                       ignore-comments)
+                                       ignore-comments symbol-hash)
   (save-excursion
     (let (match)
-      (goto-char (if pos (1- pos) (point-min)))
-      ;; search before pos
-      (company-dabrev--time-limit-while (re-search-backward regexp nil t)
-          start limit
-        (setq match (match-string-no-properties 0))
-        (if (and ignore-comments (company-in-string-or-comment))
-            (re-search-backward "\\s<\\|\\s!\\|\\s\"\\|\\s|" nil t)
-          (when (>= (length match) company-dabbrev-minimum-length)
-            (push match symbols))))
+      (when pos
+        (goto-char (1- pos))
+        ;; search before pos
+        (company-dabrev--time-limit-while (re-search-backward regexp nil t)
+            start limit
+          (setq match (match-string-no-properties 0))
+          (if (and ignore-comments (company-in-string-or-comment))
+              (re-search-backward "\\s<\\|\\s!\\|\\s\"\\|\\s|" nil t)
+            (when (not (gethash match symbol-hash))
+              (puthash match t symbol-hash)
+              (push match symbols)))))
       (goto-char (or pos (point-min)))
       ;; search after pos
       (company-dabrev--time-limit-while (re-search-forward regexp nil t)
@@ -94,15 +96,18 @@ See also `company-dabbrev-time-limit'."
         (setq match (match-string-no-properties 0))
         (if (and ignore-comments (company-in-string-or-comment))
             (re-search-forward "\\s>\\|\\s!\\|\\s\"" nil t)
-          (when (>= (length match) company-dabbrev-minimum-length)
+          (when (and (>= (length match) company-dabbrev-minimum-length)
+                     (not (gethash match symbol-hash)))
+            (puthash match t symbol-hash)
             (push match symbols))))
       symbols)))
 
 (defun company-dabbrev--search (regexp &optional limit other-buffers
                                 ignore-comments)
   (let* ((start (current-time))
+         (symbol-hash (make-hash-table :test 'equal))
          (symbols (company-dabbrev--search-buffer regexp (point) nil start limit
-                                                  ignore-comments)))
+                                                  ignore-comments symbol-hash)))
     (when other-buffers
       (dolist (buffer (delq (current-buffer) (buffer-list)))
         (and (or (eq other-buffers 'all)
@@ -110,11 +115,12 @@ See also `company-dabbrev-time-limit'."
              (with-current-buffer buffer
                (setq symbols
                      (company-dabbrev--search-buffer regexp nil symbols start
-                                                     limit ignore-comments))))
+                                                     limit ignore-comments
+                                                     symbol-hash))))
         (and limit
              (> (float-time (time-since start)) limit)
              (return))))
-    symbols))
+    (nreverse symbols)))
 
 ;;;###autoload
 (defun company-dabbrev (command &optional arg &rest ignored)
@@ -124,12 +130,12 @@ See also `company-dabbrev-time-limit'."
     (interactive (company-begin-backend 'company-dabbrev))
     (prefix (company-grab-word))
     (candidates
-     (mapcar 'downcase
-             (company-dabbrev--search (company-dabbrev--make-regexp arg)
+     (company-dabbrev--search (company-dabbrev--make-regexp arg)
                                       company-dabbrev-time-limit
-                                      company-dabbrev-other-buffers)))
+                                      company-dabbrev-other-buffers))
     (ignore-case company-dabbrev-ignore-case)
-    (duplicates t)))
+    (sorted t)
+    (duplicates nil)))
 
 (provide 'company-dabbrev)
 ;;; company-dabbrev.el ends here

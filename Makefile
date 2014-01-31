@@ -1,8 +1,14 @@
 EMACS=emacs
 CURL=curl --silent
+AUTOLOAD=--eval '(let ((generated-autoload-file (expand-file-name "$@")) \
+	(make-backup-files nil)) \
+  (mapcar (function update-file-autoloads) command-line-args-left) \
+  (save-buffers-kill-emacs t))'
 ERT_URL=http://git.savannah.gnu.org/cgit/emacs.git/plain/lisp/emacs-lisp/ert.el?h=emacs-24.3
 
-.PHONY: ert test test-batch
+all: compile autoloads
+
+.PHONY: ert test test-batch compile autoloads
 
 package: *.el
 	@ver=`grep -o "Version: .*" company.el | cut -c 10-`; \
@@ -21,6 +27,9 @@ elpa: *.el
 clean:
 	@rm -rf company-*/ company-*.tar company-*.tar.bz2 *.elc ert.el
 
+clean-all: clean
+	@rm loaddefs.el
+
 test:
 	${EMACS} -Q -nw -L . -l company-tests.el \
 	--eval "(let (pop-up-windows) (ert t))"
@@ -34,4 +43,9 @@ downloads:
 	${CURL} ${ERT_URL} > ert.el
 
 compile:
-	${EMACS} -Q --batch -L . -f batch-byte-compile company.el company-*.el
+	-@${EMACS} -Q --batch -L . -f batch-byte-compile company.el company-*.el
+
+autoloads: loaddefs.el
+
+loaddefs.el: company*.el
+	${EMACS} -Q --batch -L . $(AUTOLOAD) $?
