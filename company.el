@@ -2076,7 +2076,9 @@ beginning of next screen line."
     (if overlay
         (move-overlay overlay beg (point))
       (setq overlay (make-overlay beg (point))))
-    (vertical-motion 1)
+    (vertical-motion 0)
+    (when (= (current-column) line-start)
+      (vertical-motion 1))
     (overlay-put overlay 'company-before pad-before)
     (overlay-put overlay 'company-after pad-after)
     (overlay-put overlay 'company-line line)
@@ -2086,6 +2088,13 @@ beginning of next screen line."
     (overlay-put overlay 'company-dangle dangle)
     (overlay-put overlay 'priority 100)
     overlay))
+
+(defsubst company--adjust-column (column width)
+  (let* ((window-width (company--window-width))
+         (over (- (+ column width) window-width)))
+    (if (> over 0)
+        (- column over)
+      column)))
 
 (defun company-pseudo-tooltip-show (row column selection)
   (company-pseudo-tooltip-hide)
@@ -2097,6 +2106,7 @@ beginning of next screen line."
            (lines (company--create-lines selection (abs height)))
            (aline (car lines))
            (width (if aline (string-width aline) 0))
+           (adjusted-col (company--adjust-column column width))
            (beg (progn
                   (move-to-window-line nrow)
                   (point)))
@@ -2118,7 +2128,7 @@ beginning of next screen line."
            (ovl (make-overlay beg padend))
            (line-overlays
             (mapcar
-             (apply-partially 'company--create-line-overlay column width)
+             (apply-partially 'company--create-line-overlay adjusted-col width)
              lines)))
 
       (overlay-put ovl 'company-width width)
@@ -2142,7 +2152,8 @@ beginning of next screen line."
          (nls (overlay-get company-pseudo-tooltip-overlay 'company-newlines-padded))
          (lines (company--create-lines selection (abs height)))
          (aline (car lines))
-         (width (if aline (string-width aline) 0)))
+         (width (if aline (string-width aline) 0))
+         (adjusted-col (company--adjust-column column width)))
     (save-excursion
       (loop for ovl in ovls
             do (let ((line (pop lines))
@@ -2154,7 +2165,8 @@ beginning of next screen line."
                             (or (not (= width oldwidth))
                                 (and (> nls 0) (not (= offset 0)))))
                      (goto-char startpos)
-                     (company--create-line-overlay column width line ovl)))))
+                     (company--create-line-overlay adjusted-col width line
+                                                   ovl)))))
     (overlay-put company-pseudo-tooltip-overlay 'company-width width)))
 
 (defun company-pseudo-tooltip-hide ()
@@ -2175,6 +2187,8 @@ beginning of next screen line."
 (defun company-pseudo-tooltip-hide-line (overlay)
   (overlay-put overlay 'before-string nil)
   (overlay-put overlay 'after-string nil)
+  (overlay-put overlay 'line-prefix nil)
+  (overlay-put overlay 'wrap-prefix nil)
   (overlay-put overlay 'display nil))
 
 (defun company-pseudo-tooltip-hide-temporarily ()
