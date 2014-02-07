@@ -1696,6 +1696,12 @@ To show the number next to the candidates in some back-ends, enable
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+(defconst company--buffer-save-commands
+  (list 'save-buffer 'save-buffers-kill-emacs
+        'save-buffers-kill-terminal 'save-some-buffers)
+  "List of commands known to potentially save current buffer
+  contents to disk.")
+
 (defvar company-last-metadata nil)
 (make-variable-buffer-local 'company-last-metadata)
 
@@ -2065,14 +2071,14 @@ beginning of next screen line."
       (backward-char)
       (setq screen-column (current-column)))
     (when (< screen-column start-column)
-      (setq pad-before (make-string (- start-column screen-column) ? )))
+      (setq pad-before (company-space-string (- start-column screen-column))))
     (setq beg (point))
     (move-to-column end-column)
     (setq screen-column (current-column)
           dangle (eolp))
     (setq pad-after
           (if (> screen-column end-column)
-              (make-string (- screen-column end-column) ? )
+              (company-space-string (- screen-column end-column))
             ""))
     (if overlay
         (move-overlay overlay beg (point))
@@ -2098,18 +2104,23 @@ beginning of next screen line."
         (- column over company-tooltip-margin)
       (- column company-tooltip-margin))))
 
-(defun company-pseudo-tooltip-show (row column height selection)
+(defun company-pseudo-tooltip-show (row column width height lines)
+  "Creates tooltip at specified coordinates.
+ROW and COLUMN specifies the window coordinate of the top or
+bottom left corner of tooltip, depending on HEIGHT. WIDTH and
+HEIGHT specifies the dimensions of tooltip. If HEIGHT is negative
+then tooltip grows upwards. LINES is a list of strings to be
+displayed in the tooltip. Each element of LINES should have a
+display width of exactly WIDTH."
   (company-pseudo-tooltip-hide)
   (save-excursion
-    (let* ((lines (company--create-lines selection height))
-           (aline (car lines))
-           (width (if aline (string-width aline) 0))
-           (adjcol (company--adjust-column column width))
+    (let* ((adjcol (company--adjust-column column width))
+           (firstrow (if (> height 0) row (+ row height)))
            (lastrow (progn
-                      (move-to-window-line (+ row height))
+                      (move-to-window-line (+ firstrow (abs height)))
                       (company--row)))
            (beg (point))
-           (pad (- (+ row height) lastrow))
+           (pad (- (+ firstrow (abs height)) lastrow))
            (modified (buffer-modified-p))
            (inhibit-point-motion-hooks t)
            (padstart (point-max))
@@ -2124,7 +2135,7 @@ beginning of next screen line."
            (ovl (make-overlay beg padend))
            (line-overlays
             (progn
-              (move-to-window-line row)
+              (move-to-window-line firstrow)
               (mapcar
                (apply-partially 'company--create-line-overlay adjcol width)
                lines))))
@@ -2139,13 +2150,17 @@ beginning of next screen line."
       (setq company-pseudo-tooltip-overlay ovl))))
 
 (defun company-pseudo-tooltip-show-at-point (pos)
-  (let ((row (1+ (company--row pos)))
-        (col (company--column pos))
-        (height (company--pseudo-tooltip-height)))
-    (when (< height 0)
-      (setq row (+ row height -1)
-            height (abs height)))
-    (company-pseudo-tooltip-show row col height company-selection)))
+  (let* ((row (1+ (company--row pos)))
+         (col (company--column pos))
+         (height (company--pseudo-tooltip-height))
+         (lines (company--create-lines company-selection (abs height)))
+         (aline (car lines))
+         (width (if aline (string-width aline) 0)))
+      (if (< height 0)
+          (setq height (- (length lines))
+                row (- row 1))
+        (setq height (length lines)))
+      (company-pseudo-tooltip-show row col width height lines)))
 
 (defun company-pseudo-tooltip-edit (selection)
   (let* ((height (overlay-get company-pseudo-tooltip-overlay 'company-height))
@@ -2178,6 +2193,7 @@ beginning of next screen line."
           (oldtick (overlay-get company-pseudo-tooltip-overlay 'company-tick))
           (tick (buffer-chars-modified-tick))
           (padding (overlay-get company-pseudo-tooltip-overlay 'company-newlines-padded)))
+      (mapc 'company-pseudo-tooltip-hide-line ovls)
       (mapc 'delete-overlay ovls)
       (delete-overlay company-pseudo-tooltip-overlay)
       (setq company-pseudo-tooltip-overlay nil)
@@ -2193,6 +2209,11 @@ beginning of next screen line."
   (overlay-put overlay 'after-string nil)
   (overlay-put overlay 'line-prefix nil)
   (overlay-put overlay 'wrap-prefix nil)
+  (let ((restore (overlay-get overlay 'company-restore))
+        (pos (overlay-start overlay)))
+    (when restore
+      (put-text-property pos (1+ pos) (car restore) (cdr restore))))
+  (overlay-put overlay 'company-restore nil)
   (overlay-put overlay 'display nil))
 
 (defun company-pseudo-tooltip-hide-temporarily ()
@@ -2216,11 +2237,20 @@ beginning of next screen line."
           (overlay-put line-overlay (if dangle 'after-string 'display)
                        (concat before line after))
         (when (> prefix-width 0)
-          (let ((prefix (concat (make-string (- prefix-width protrude) ? )
-                                (substring line 0 protrude))))
-            (overlay-put line-overlay
-                         (if (= offset 0) 'line-prefix 'wrap-prefix)
-                         prefix)))
+          (let* ((prefix
+                  (concat (company-space-string
+                           (max 0 (- prefix-width protrude)))
+                          (substring line
+                                     (max 0 (- protrude prefix-width))
+                                     protrude)))
+                 (start (overlay-start line-overlay))
+                 (end (overlay-end line-overlay))
+                 (type (if (= offset 0) 'line-prefix 'wrap-prefix))
+                 (prop (get-text-property start type)))
+            (if (> end start)
+                (overlay-put line-overlay type prefix)
+              (overlay-put line-overlay 'company-restore (cons type prop))
+              (put-text-property start (1+ start) type prefix))))
         (overlay-put line-overlay (if dangle 'after-string 'display)
                      (concat before (substring line protrude) after))))))
 
@@ -2232,14 +2262,17 @@ beginning of next screen line."
 (defun company-pseudo-tooltip-frontend (command)
   "`company-mode' front-end similar to a tooltip but based on overlays."
   (case command
-    (pre-command (company-pseudo-tooltip-hide-temporarily))
+    (pre-command (if (memq this-command company--buffer-save-commands)
+                     (company-pseudo-tooltip-hide)
+                   (company-pseudo-tooltip-hide-temporarily)))
     (post-command
      (let ((old-height (if (overlayp company-pseudo-tooltip-overlay)
                            (overlay-get company-pseudo-tooltip-overlay
                                         'company-height)
                          0))
            (new-height (company--pseudo-tooltip-height)))
-       (unless (and (>= (* old-height new-height) 0)
+       (unless (and company-pseudo-tooltip-overlay
+                    (>= (* old-height new-height) 0)
                     (>= (abs old-height) (abs new-height))
                     (equal (buffer-chars-modified-tick)
                            (overlay-get company-pseudo-tooltip-overlay
