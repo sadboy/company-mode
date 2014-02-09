@@ -1334,6 +1334,9 @@ Keywords and function definition names are ignored."
 (defvar company-search-old-selection 0)
 (make-variable-buffer-local 'company-search-old-selection)
 
+(defvar company-search-match-stack nil)
+(make-variable-buffer-local 'company-search-match-stack)
+
 (defun company-search (text lines)
   (let ((quoted (regexp-quote text))
         (i 0))
@@ -1341,6 +1344,26 @@ Keywords and function definition names are ignored."
       (when (string-match quoted line (length company-prefix))
         (return i))
       (incf i))))
+
+(defun company-search-delete-char ()
+  (interactive)
+  (company-search-assert-enabled)
+  (let ((l (length company-search-string)))
+    (if (or (not company-search-string)
+            (= l 0))
+        (ding)
+      (setq company-search-string
+            (substring company-search-string 0
+                       (if (> l 0) (1- l) 0))
+            company-search-lighter
+            (concat " Search: \"" company-search-string "\""))
+      (let ((pos (company-search company-search-string
+                                 company-candidates)))
+        (if (null pos)
+            (ding)
+          (company-set-selection (+ company-selection pos) t)))))
+  (when (= (length company-search-string) 0)
+    (setq company-search-string nil)))
 
 (defun company-search-printing-char ()
   (interactive)
@@ -1391,9 +1414,21 @@ Keywords and function definition names are ignored."
   ;; Invalidate cache.
   (setq company-candidates-cache (cons company-prefix company-candidates)))
 
+(defun company-filter-delete-char ()
+  (interactive)
+  (company-search-delete-char)
+  (let ((elem (pop company-search-match-stack)))
+    (when (consp elem)
+      (company-update-candidates (cdr elem))))
+  (company-call-frontends 'update))
+
 (defun company-filter-printing-char ()
   (interactive)
   (company-search-assert-enabled)
+  (when (not (string= (caar company-search-match-stack)
+                      company-search-string))
+    (push (cons company-search-string company-candidates)
+        company-search-match-stack))
   (company-search-printing-char)
   (company-create-match-predicate)
   (company-call-frontends 'update))
@@ -1409,7 +1444,6 @@ Keywords and function definition names are ignored."
 (defun company-search-abort ()
   "Abort searching the completion candidates."
   (interactive)
-  (company-search-assert-enabled)
   (company-set-selection company-search-old-selection t)
   (company-search-mode 0))
 
@@ -1439,6 +1473,7 @@ Keywords and function definition names are ignored."
     (while (< i 256)
       (define-key keymap (vector i) 'company-search-printing-char)
       (incf i))
+    (define-key keymap (kbd "<backspace>") 'company-search-delete-char)
     (let ((meta-map (make-sparse-keymap)))
       (define-key keymap (char-to-string meta-prefix-char) meta-map)
       (define-key keymap [escape] meta-map))
@@ -1467,6 +1502,7 @@ Don't start this directly, use `company-search-candidates' or
     (kill-local-variable 'company-search-string)
     (kill-local-variable 'company-search-lighter)
     (kill-local-variable 'company-search-old-selection)
+    (kill-local-variable 'company-search-match-stack)
     (company-enable-overriding-keymap company-active-map)))
 
 (defun company-search-assert-enabled ()
@@ -1495,14 +1531,14 @@ uses the search string to limit the completion candidates."
   (let ((keymap (make-keymap)))
     (define-key keymap [remap company-search-printing-char]
       'company-filter-printing-char)
+    (define-key keymap [remap company-search-delete-char]
+      'company-filter-delete-char)
     (set-keymap-parent keymap company-search-map)
     keymap)
   "Keymap used for incrementally searching the completion candidates.")
 
 (defvar company-explicit-map
   (let ((keymap (make-keymap)))
-    (define-key keymap [remap company-search-printing-char]
-      'company-filter-printing-char)
     (define-key keymap (kbd "C-g") 'company-abort)
     (define-key keymap (kbd "M-n") 'company-select-next)
     (define-key keymap (kbd "M-p") 'company-select-previous)
@@ -1515,7 +1551,7 @@ uses the search string to limit the completion candidates."
     (dolist (key company-reject-and-insert-list)
       (define-key keymap key 'company-reject-and-pass-through))
 
-    (set-keymap-parent keymap company-search-map)
+    (set-keymap-parent keymap company-filter-map)
     keymap)
   "Keymap used for incrementally searching the completion candidates.")
 
