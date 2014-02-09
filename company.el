@@ -487,6 +487,16 @@ treated as if it was on this list."
                  (const :tag "Self insert command" '(self-insert-command))
                  (repeat :tag "Commands" function)))
 
+(defcustom company-continue-commands t
+  "A list of commands that are allowed during completion.
+If this is t, or if `company-begin-commands' is t, any command is allowed.
+Otherwise, the value must be a list of symbols.  If it starts with `not',
+the cdr is the list of commands that abort completion.  Otherwise, all
+commands except those in that list, or in `company-begin-commands', or
+commands in the `company-' namespace, abort completion."
+  :type '(choice (const :tag "Any command" t)
+                 (repeat :tag "Commands" function)))
+
 (defcustom company-show-numbers nil
   "If enabled, show quick-access numbers for the first ten candidates."
   :type '(choice (const :tag "off" nil)
@@ -882,6 +892,15 @@ can retrieve meta-data for them."
            (and (symbolp this-command) (get this-command 'company-begin)))
        (not (and transient-mark-mode mark-active))))
 
+(defun company--should-continue ()
+  (or (eq t company-begin-commands)
+      (eq t company-continue-commands)
+      (if (eq 'not (car company-continue-commands))
+          (not (memq this-command (cdr company-continue-commands)))
+        (or (memq this-command company-begin-commands)
+            (memq this-command company-continue-commands)
+            (string-match-p "\\`company-" (symbol-name this-command))))))
+
 (defun company-call-frontends (command)
   (dolist (frontend company-frontends)
     (condition-case err
@@ -1144,26 +1163,25 @@ Keywords and function definition names are ignored."
               company-prefix)))
 
 (defun company--continue-failed ()
-  (when (company--incremental-p)
-    (let ((input (buffer-substring-no-properties (point) company-point)))
-      (cond
-       ((company-auto-complete-p input)
-        ;; auto-complete
-        (save-excursion
-          (goto-char company-point)
-          (let ((company--auto-completion t))
-            (company-complete-selection))
-          nil))
-       ((company-require-match-p)
-        ;; wrong incremental input, but required match
-        (delete-char (- (length input)))
-        (ding)
-        (message "Matching input is required")
-        company-candidates)
-       ((equal company-prefix (car company-candidates))
-        ;; last input was actually success
-        (company-cancel company-prefix)
-        nil)))))
+  (let ((input (buffer-substring-no-properties (point) company-point)))
+    (cond
+     ((company-auto-complete-p input)
+      ;; auto-complete
+      (save-excursion
+        (goto-char company-point)
+        (let ((company--auto-completion t))
+          (company-complete-selection))
+        nil))
+     ((company-require-match-p)
+      ;; wrong incremental input, but required match
+      (delete-char (- (length input)))
+      (ding)
+      (message "Matching input is required")
+      company-candidates)
+     ((equal company-prefix (car company-candidates))
+      ;; last input was actually success
+      (company-cancel company-prefix))
+     (t (company-cancel)))))
 
 (defun company--good-prefix-p (prefix)
   (and (or (company-explicit-action-p)
@@ -1184,18 +1202,18 @@ Keywords and function definition names are ignored."
                           (- company-point (length company-prefix))))
               (setq new-prefix (or (car-safe new-prefix) new-prefix))
               (company-calculate-candidates new-prefix))))
-    (or (cond
-         ((eq c t)
-          ;; t means complete/unique.
-          (company-cancel new-prefix)
-          nil)
-         ((consp c)
-          ;; incremental match
-          (setq company-prefix new-prefix)
-          (company-update-candidates c)
-          c)
-         (t (company--continue-failed)))
-        (company-cancel))))
+    (cond
+     ((eq c t)
+      ;; t means complete/unique.
+      (company-cancel new-prefix))
+     ((consp c)
+      ;; incremental match
+      (setq company-prefix new-prefix)
+      (company-update-candidates c)
+      c)
+     ((not (company--incremental-p))
+      (company-cancel))
+     (t (company--continue-failed)))))
 
 (defun company--begin-new ()
   (let (prefix c)
@@ -1272,7 +1290,9 @@ Keywords and function definition names are ignored."
     (cancel-timer company-timer))
   (company-search-mode 0)
   (company-call-frontends 'hide)
-  (company-enable-overriding-keymap nil))
+  (company-enable-overriding-keymap nil)
+  ;; Make return value explicit.
+  nil)
 
 (defun company-abort ()
   (interactive)
@@ -1293,7 +1313,9 @@ Keywords and function definition names are ignored."
   (unless (company-keep this-command)
     (condition-case err
         (when company-candidates
-          (company-call-frontends 'pre-command))
+          (company-call-frontends 'pre-command)
+          (unless (company--should-continue)
+            (company-abort)))
       (error (message "Company: An error occurred in pre-command")
              (message "%s" (error-message-string err))
              (company-cancel))))
@@ -1953,7 +1975,7 @@ Example: \(company-begin-with '\(\"foo\" \"foobar\" \"foobarbaz\"\)\)"
                          '(face company-tooltip-common
                            mouse-face company-tooltip-mouse)
                          line)
-    (add-text-properties ann-start (+ ann-start (length annotation))
+    (add-text-properties ann-start (min (+ ann-start (length annotation)) width)
                          '(face company-tooltip-annotation
                            mouse-face company-tooltip-mouse)
                          line)
@@ -2004,7 +2026,7 @@ Example: \(company-begin-with '\(\"foo\" \"foobar\" \"foobarbaz\"\)\)"
         scrollbar-bounds)
 
     ;; Maybe clear old offset.
-    (when (<= len (+ company-tooltip-offset limit))
+    (when (< len (+ company-tooltip-offset limit))
       (setq company-tooltip-offset 0))
 
     ;; Scroll to offset.
