@@ -1085,11 +1085,14 @@ Keywords and function definition names are ignored."
              (before (cdr (member company-backend (reverse company-backends))))
              (next (if backward
                        (append before (reverse after))
-                     (append after (reverse before)))))
+                     (append after (reverse before))))
+             (search company-search-string))
         (company-cancel)
         (dolist (backend next)
           (when (ignore-errors (company-begin-backend backend))
-            (return t))))
+            (return t)))
+        (when (and company-candidates search)
+          (company-filter-restore search)))
     (company-manual-begin))
   (unless company-candidates
     (error "No other back-end")))
@@ -1353,17 +1356,16 @@ Keywords and function definition names are ignored."
             (= l 0))
         (ding)
       (setq company-search-string
-            (substring company-search-string 0
-                       (if (> l 0) (1- l) 0))
+            (if (= l 1)
+                nil
+              (substring company-search-string 0
+                         (1- l)))
             company-search-lighter
             (concat " Search: \"" company-search-string "\""))
-      (let ((pos (company-search company-search-string
-                                 company-candidates)))
-        (if (null pos)
-            (ding)
-          (company-set-selection (+ company-selection pos) t)))))
-  (when (= (length company-search-string) 0)
-    (setq company-search-string nil)))
+      (let ((pos (when company-search-string
+                   (company-search company-search-string
+                                   company-candidates))))
+        (company-set-selection (or pos 0) t)))))
 
 (defun company-search-printing-char ()
   (interactive)
@@ -1402,15 +1404,19 @@ Keywords and function definition names are ignored."
       (company-set-selection (- company-selection pos 1) t))))
 
 (defun company-create-match-predicate ()
-  (setq company-candidates-predicate
-        `(lambda (candidate)
-           ,(if company-candidates-predicate
-                `(and (string-match ,company-search-string candidate)
-                      (funcall ,company-candidates-predicate
-                               candidate))
-              `(string-match ,company-search-string candidate))))
-  (company-update-candidates
-   (company-apply-predicate company-candidates company-candidates-predicate))
+  (if company-search-string
+      (progn
+        (setq company-candidates-predicate
+              `(lambda (candidate)
+                 ,(if company-candidates-predicate
+                      `(and (string-match ,company-search-string candidate)
+                            (funcall ,company-candidates-predicate
+                                     candidate))
+                    `(string-match ,company-search-string candidate))))
+        (company-update-candidates
+         (company-apply-predicate company-candidates company-candidates-predicate)))
+    (setq company-candidates-predicate nil)
+    (company-update-candidates company-candidates))
   ;; Invalidate cache.
   (setq company-candidates-cache (cons company-prefix company-candidates)))
 
@@ -1419,16 +1425,40 @@ Keywords and function definition names are ignored."
   (company-search-delete-char)
   (let ((elem (pop company-search-match-stack)))
     (when (consp elem)
-      (company-update-candidates (cdr elem))))
+      (setq company-candidates (cdr elem))
+      (company-create-match-predicate)))
+  (company-call-frontends 'update))
+
+(defun company-filter-restore (search)
+  (company-search-assert-enabled)
+  (let ((candidates company-candidates)
+        laststr)
+    (dotimes (i (length search))
+      (setq laststr (substring search 0 i))
+      (push (cons laststr candidates) company-search-match-stack)
+      (setq company-candidates-predicate
+            `(lambda (candidate)
+               ,(if company-candidates-predicate
+                    `(and (string-match ,laststr candidate)
+                          (funcall ,company-candidates-predicate
+                                   candidate))
+                  `(string-match ,laststr candidate)))
+            candidates
+            (company-apply-predicate candidates company-candidates-predicate)))
+    (setq company-search-string search
+          company-search-lighter (concat " Search: \"" company-search-string "\""))
+    (let ((pos (company-search company-search-string company-candidates)))
+      (if (null pos)
+          (ding)
+        (company-set-selection (+ company-selection pos) t))))
+  (company-create-match-predicate)
   (company-call-frontends 'update))
 
 (defun company-filter-printing-char ()
   (interactive)
   (company-search-assert-enabled)
-  (when (not (string= (caar company-search-match-stack)
-                      company-search-string))
-    (push (cons company-search-string company-candidates)
-        company-search-match-stack))
+  (push (cons company-search-string company-candidates)
+        company-search-match-stack)
   (company-search-printing-char)
   (company-create-match-predicate)
   (company-call-frontends 'update))
