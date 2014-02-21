@@ -325,7 +325,8 @@
             (company-backend (lambda (action &optional arg &rest _ignore)
                                (when (eq action 'annotation)
                                  (cdr (assoc arg '(("123" . "(4)")))))))
-            (company-candidates '("123" "45")))
+            (company-candidates '("123" "45"))
+            company-tooltip-align-annotations)
         (company-pseudo-tooltip-show-at-point (point))
         (let ((ov company-pseudo-tooltip-overlay)
               (lines (overlay-get company-pseudo-tooltip-overlay 'company-line-overlays)))
@@ -334,12 +335,32 @@
           (should (string= (overlay-get (pop lines) 'company-line) " 123(4) "))
           (should (string= (overlay-get (pop lines) 'company-line) " 45     ")))))))
 
+(ert-deftest company-pseudo-tooltip-show-with-annotations-right-aligned ()
+  :tags '(interactive)
+  (with-temp-buffer
+    (save-window-excursion
+      (set-window-buffer nil (current-buffer))
+      (insert " ")
+      (save-excursion (insert "\n"))
+      (let ((company-candidates-length 3)
+            (company-backend (lambda (action &optional arg &rest _ignore)
+                               (when (eq action 'annotation)
+                                 (cdr (assoc arg '(("123" . "(4)")
+                                                   ("67" . "(891011)")))))))
+            (company-candidates '("123" "45" "67"))
+            (company-tooltip-align-annotations t))
+        (company-pseudo-tooltip-show-at-point (point))
+        (let ((ov company-pseudo-tooltip-overlay))
+          ;; With margins.
+          (should (eq (overlay-get ov 'company-width) 12)))))))
+
 (ert-deftest company-create-lines-shows-numbers ()
   (let ((company-show-numbers t)
         (company-candidates '("x" "y" "z"))
         (company-candidates-length 3))
     (should (equal '(" x 1 " " y 2 " " z 3 ")
                    (company--create-lines 0 999)))))
+
 
 (ert-deftest company-scrollbar-bounds ()
   (should (equal nil (company--scrollbar-bounds 0 3 3)))
