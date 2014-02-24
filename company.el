@@ -2251,37 +2251,35 @@ current window."
            (height (length lines))
            (adjcol (company--adjust-column column width))
            (inhibit-point-motion-hooks t)
+           (beg (point))
            (firstrow (if above (- row height) row))
-           (beg (progn
-                  (move-to-window-line firstrow)
-                  (point)))
-           (lastrow (progn
-                      (move-to-window-line (+ firstrow height))
-                      (company--row)))
-           (pad (- (+ firstrow height) lastrow))
            (modified (buffer-modified-p))
-           (padstart (point))
-           (padend (if (> pad 0)
-                       (let ((buffer-undo-list t)
-                             (inhibit-modification-hooks t))
-                         (goto-char (point-max))
-                         (insert (make-string pad ?\n))
-                         (setq company--point-max (point-max)))
-                     padstart))
-           (tick (buffer-chars-modified-tick))
-           (ovl (progn (overlay-recenter padend) (make-overlay beg padend)))
-           (line-overlays
-            (progn
-              (overlay-put ovl 'priority 99)
-              (overlay-put ovl 'display t)
-              (move-to-window-line firstrow)
-              (mapcar
-               (apply-partially 'company--create-line-overlay adjcol)
-               lines))))
+           (ovl (make-overlay beg (point-max)))
+           lastrow pad padstart tick line-overlays)
+
+      (overlay-put ovl 'priority 99)
+      (overlay-put ovl 'display t)
+      (move-to-window-line (+ firstrow height))
+      (setq lastrow (company--row)
+            pad (- (+ firstrow height) lastrow)
+            padstart (point))
+      (if (> pad 0)
+          (let ((buffer-undo-list t)
+                (inhibit-modification-hooks t))
+            (goto-char (point-max))
+            (insert (make-string pad ?\n))
+            (setq company--point-max (point-max)))
+        (move-overlay ovl beg padstart))
+      (setq tick (buffer-chars-modified-tick))
+      (overlay-recenter (overlay-end ovl))
+      (move-to-window-line firstrow)
+      (setq line-overlays
+            (mapcar
+             (apply-partially 'company--create-line-overlay adjcol)
+             lines))
 
       (overlay-put ovl 'company-width width)
       (overlay-put ovl 'company-height (if above (- height) height))
-      (overlay-put ovl 'company-row firstrow)
       (overlay-put ovl 'company-column column)
       (overlay-put ovl 'company-tick tick)
       (overlay-put ovl 'company-modified modified)
@@ -2298,7 +2296,6 @@ current window."
 
 (defun company-pseudo-tooltip-edit (selection)
   (let* ((height (overlay-get company-pseudo-tooltip-overlay 'company-height))
-         (row (overlay-get company-pseudo-tooltip-overlay 'company-row))
          (column (overlay-get company-pseudo-tooltip-overlay 'company-column))
          (oldwidth (overlay-get company-pseudo-tooltip-overlay 'company-width))
          (ovls (overlay-get company-pseudo-tooltip-overlay 'company-line-overlays))
@@ -2309,15 +2306,15 @@ current window."
          (adjcol (company--adjust-column column width))
          (inhibit-point-motion-hooks t))
     (save-excursion
-      (move-to-window-line row)
       (loop for ovl in ovls
             do (let ((line (pop lines)))
                  (overlay-put ovl 'company-line line)
-                 (if (and line (> (length line) 0)
+                 (when (and line (> (length line) 0)
                           (or (not (= width oldwidth))
                               (> nls 0)))
-                     (company--create-line-overlay adjcol line ovl)
-                   (vertical-motion 1)))))
+                   (goto-char (overlay-start ovl))
+                   (vertical-motion 0)
+                   (company--create-line-overlay adjcol line ovl)))))
     (overlay-put company-pseudo-tooltip-overlay 'company-width width)))
 
 (defun company-pseudo-tooltip-hide ()
@@ -2378,7 +2375,7 @@ current window."
 (defun company-pseudo-tooltip-frontend (command)
   "`company-mode' front-end similar to a tooltip but based on overlays."
   (case command
-    (pre-command  (company-pseudo-tooltip-hide-temporarily))
+    (pre-command (company-pseudo-tooltip-hide-temporarily))
     (post-command
      (let ((old-height (if (overlayp company-pseudo-tooltip-overlay)
                            (overlay-get company-pseudo-tooltip-overlay
@@ -2435,9 +2432,10 @@ current window."
          (not (equal completion ""))
          (add-text-properties 0 1 '(cursor t) completion))
 
-    (overlay-put company-preview-overlay 'display
-                 (concat completion (unless (eq pos (point-max))
-                                      (buffer-substring pos (1+ pos)))))
+    (if (eobp)
+        (overlay-put company-preview-overlay 'after-string completion)
+      (overlay-put company-preview-overlay 'display
+                   (concat completion (buffer-substring pos (1+ pos)))))
     (overlay-put company-preview-overlay 'window (selected-window))))
 
 (defun company-preview-hide ()
