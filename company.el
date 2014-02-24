@@ -2343,7 +2343,8 @@ current window."
   (when company-pseudo-tooltip-overlay
     (mapc 'company-pseudo-tooltip-hide-line
           (overlay-get company-pseudo-tooltip-overlay
-                       'company-line-overlays))))
+                       'company-line-overlays))
+    (overlay-put company-pseudo-tooltip-overlay 'display nil)))
 
 (defun company-pseudo-tooltip-unhide-line (line-overlay)
   (let ((before (overlay-get line-overlay 'company-before))
