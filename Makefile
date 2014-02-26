@@ -1,4 +1,5 @@
 EMACS=emacs
+LOADPATH=-L . -L ../flx
 CURL=curl --silent
 AUTOLOAD=--eval '(let ((generated-autoload-file (expand-file-name "$@")) \
 	(make-backup-files nil)) \
@@ -31,11 +32,11 @@ clean-all: clean
 	@rm loaddefs.el
 
 test:
-	${EMACS} -Q -nw -L . -l company-tests.el \
+	${EMACS} -Q -nw ${LOADPATH} -l company-tests.el \
 	--eval "(let (pop-up-windows) (ert t))"
 
 test-batch:
-	${EMACS} -Q --batch -L . -l company-tests.el \
+	${EMACS} -Q --batch ${LOADPATH} -l company-tests.el \
 	--eval "(ert-run-tests-batch-and-exit '(not (tag interactive)))"
 
 downloads:
@@ -43,9 +44,9 @@ downloads:
 	${CURL} ${ERT_URL} > ert.el
 
 compile:
-	-@${EMACS} -Q --batch -L . -f batch-byte-compile company.el company-*.el
+	-@${EMACS} -Q --batch ${LOADPATH} -f batch-byte-compile company.el company-*.el
 
 autoloads: loaddefs.el
 
 loaddefs.el: company*.el
-	${EMACS} -Q --batch -L . $(AUTOLOAD) $?
+	${EMACS} -Q --batch ${LOADPATH} $(AUTOLOAD) $?

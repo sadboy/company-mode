@@ -118,6 +118,11 @@
      :foreground "red"))
   "Face used for the common completion in the tooltip.")
 
+(defface company-tooltip-highlight
+  '((default :inherit company-tooltip-common
+      :underline t))
+  "Face used to hightlight matched portions in the tooltip.")
+
 (defface company-tooltip-common-selection
   '((default :inherit company-tooltip-selection)
     (((background light))
@@ -125,6 +130,11 @@
     (((background dark))
      :foreground "red"))
   "Face used for the selected common completion in the tooltip.")
+
+(defface company-tooltip-highlight-selection
+  '((default :inherit company-tooltip-common-selection
+      :underline t))
+  "Face used to hightlight matched portions in the tooltip when selected.")
 
 (defface company-tooltip-annotation
   '((default :inherit company-tooltip)
@@ -801,9 +811,12 @@ means that `company-mode' is always turned on except in `message-mode' buffers."
                 dir (file-name-directory (directory-file-name dir))))))))
 
 (defun company-call-backend (&rest args)
-  (if (functionp company-backend)
-      (apply company-backend args)
-    (apply 'company--multi-backend-adapter company-backend args)))
+  (condition-case err
+      (if (functionp company-backend)
+          (apply company-backend args)
+        (apply 'company--multi-backend-adapter company-backend args))
+    (error (error "Company: Back-end %s error \"%s\" with args %s"
+                    company-backend (error-message-string err) args))))
 
 (defun company--multi-backend-adapter (backends command &rest args)
   (let ((backends (loop for b in backends
@@ -870,7 +883,8 @@ Controlled by `company-auto-complete'.")
   (substring str (length company-prefix)))
 
 (defun company--insert-candidate (candidate)
-  (setq candidate (substring-no-properties candidate))
+  (setq candidate (substring-no-properties
+                   (if (consp candidate) (car candidate) candidate)))
   ;; XXX: Return value we check here is subject to change.
   (if (eq (company-call-backend 'ignore-case) 'keep-prefix)
       (insert (company-strip-prefix candidate))
@@ -1084,37 +1098,37 @@ Keywords and function definition names are ignored."
      noccurs)))
 
 (defun company-idle-begin (buf win tick pos)
-  (and company-mode
-       (eq buf (current-buffer))
+  (and (eq buf (current-buffer))
        (eq win (selected-window))
        (eq tick (buffer-chars-modified-tick))
        (eq pos (point))
-       (not company-candidates)
        (not (equal (point) company-point))
-       (let ((company-idle-delay t)
-             (company-begin-commands t))
-         (company-begin)
-         (when company-candidates
-           (when (version< emacs-version "24.3.50")
-             (company-input-noop))
-           (company-post-command)))))
+       (when (company-auto-begin)
+         (when (version< emacs-version "24.3.50")
+           (company-input-noop))
+         (company-post-command))))
 
 (defun company-auto-begin ()
-  (company-assert-enabled)
   (and company-mode
        (not company-candidates)
        (let ((company-idle-delay t)
-             (company-minimum-prefix-length 0)
              (company-begin-commands t))
-         (company-begin)))
+         (condition-case-no-debug err
+             (company-begin)
+           (error (message "Company: An error occurred in auto-begin")
+                  (message "%s" (error-message-string err))
+                  (company-cancel))
+           (quit (company-cancel)))))
   ;; Return non-nil if active.
   company-candidates)
 
 (defun company-manual-begin ()
   (interactive)
+  (company-assert-enabled)
   (setq company--explicit-action t)
   (unwind-protect
-      (company-auto-begin)
+      (let ((company-minimum-prefix-length 0))
+        (company-auto-begin))
     (unless company-candidates
       (setq company--explicit-action nil))))
 
@@ -1134,7 +1148,7 @@ Keywords and function definition names are ignored."
           (when (ignore-errors (company-begin-backend backend))
             (return t)))
         (when (and company-candidates search)
-          (company-filter-restore search)))
+          (company-search-restore search)))
     (company-manual-begin))
   (unless company-candidates
     (error "No other back-end")))
@@ -1324,6 +1338,8 @@ Keywords and function definition names are ignored."
   (setq company-point (point)))
 
 (defun company-finish (result)
+  (when (consp result)
+    (setq result (car result)))
   (company--insert-candidate result)
   (company-cancel result)
   ;; Don't start again, unless started manually.
@@ -1370,6 +1386,8 @@ Keywords and function definition names are ignored."
 
 ;;; search ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+(require 'flx)
+
 (defvar company-search-string nil)
 (make-variable-buffer-local 'company-search-string)
 
@@ -1382,137 +1400,103 @@ Keywords and function definition names are ignored."
 (defvar company-search-old-selection 0)
 (make-variable-buffer-local 'company-search-old-selection)
 
-(defvar company-search-match-stack nil)
-(make-variable-buffer-local 'company-search-match-stack)
+(defvar company-search-saved-candidates nil)
+(make-variable-buffer-local 'company-search-saved-candidates)
 
-(defun company-search (text lines)
-  (let ((quoted (regexp-quote text))
-        (i 0))
-    (dolist (line lines)
-      (when (string-match quoted line (length company-prefix))
-        (return i))
-      (incf i))))
+(defsubst company-search-score (candidates)
+  (if (> (length company-search-string) 0)
+      (mapcar (lambda (item)
+                (if (cdr item)
+                    (cons (car item)
+                          (flx-score (company-strip-prefix (car item))
+                                     company-search-string))
+                  item))
+              candidates)
+    candidates))
 
-(defun company-search-delete-char ()
-  (interactive)
+(defsubst company-filter-score (candidates)
+  (if (> (length company-search-string) 0)
+      (let (new)
+        (loop for item in candidates
+              do (when (cdr item)
+                   (let* ((str (car item))
+                          (score (flx-score (company-strip-prefix str)
+                                            company-search-string)))
+                     (when score
+                       (push (cons str score) new)))))
+        new)
+    candidates))
+
+(defsubst company-search-update-string (str)
   (company-search-assert-enabled)
-  (let ((l (length company-search-string)))
-    (if (or (not company-search-string)
-            (= l 0))
-        (ding)
+  (if str
       (setq company-search-string
-            (if (= l 1)
-                nil
-              (substring company-search-string 0
-                         (1- l)))
-            company-search-lighter
-            (concat " Search: \"" company-search-string "\""))
-      (let ((pos (when company-search-string
-                   (company-search company-search-string
-                                   company-candidates))))
-        (company-set-selection (or pos 0) t)))))
+            (concat (or company-search-string "") str))
+    (setq company-search-string (substring company-search-string 0 -1)))
+  (setq company-search-lighter
+        (concat " Search: \"" company-search-string "\"")))
+
+(defsubst company-search-update-candidates (candidates)
+  (setq company-candidates-length (length candidates)
+        company-selection 0
+        company-candidates candidates))
+
+(defun company-search-sort-predicate (a b)
+  (and (not (null (cdr a)))
+       (or (null (cdr b)) (> (cadr a) (cadr b)))))
+
+(defun company-search-restore (str)
+  (company-search-update-string str)
+  (company-search-update-candidates
+   (sort (company-search-score company-candidates)
+         'company-search-sort-predicate))
+  (company-call-frontends 'update))
 
 (defun company-search-printing-char ()
   (interactive)
-  (company-search-assert-enabled)
-  (setq company-search-string
-        (concat (or company-search-string "") (string last-command-event))
-        company-search-lighter (concat " Search: \"" company-search-string
-                                        "\""))
-  (let ((pos (company-search company-search-string
-                              (nthcdr company-selection company-candidates))))
-    (if (null pos)
-        (ding)
-      (company-set-selection (+ company-selection pos) t))))
-
-(defun company-search-repeat-forward ()
-  "Repeat the incremental search in completion candidates forward."
-  (interactive)
-  (company-search-assert-enabled)
-  (let ((pos (company-search company-search-string
-                              (cdr (nthcdr company-selection
-                                           company-candidates)))))
-    (if (null pos)
-        (ding)
-      (company-set-selection (+ company-selection pos 1) t))))
-
-(defun company-search-repeat-backward ()
-  "Repeat the incremental search in completion candidates backwards."
-  (interactive)
-  (company-search-assert-enabled)
-  (let ((pos (company-search company-search-string
-                              (nthcdr (- company-candidates-length
-                                         company-selection)
-                                      (reverse company-candidates)))))
-    (if (null pos)
-        (ding)
-      (company-set-selection (- company-selection pos 1) t))))
-
-(defun company-create-match-predicate ()
-  (if company-search-string
-      (progn
-        (setq company-candidates-predicate
-              `(lambda (candidate)
-                 ,(if company-candidates-predicate
-                      `(and (string-match ,company-search-string candidate)
-                            (funcall ,company-candidates-predicate
-                                     candidate))
-                    `(string-match ,company-search-string candidate))))
-        (company-update-candidates
-         (company-apply-predicate company-candidates company-candidates-predicate)))
-    (setq company-candidates-predicate nil)
-    (company-update-candidates company-candidates))
-  ;; Invalidate cache.
-  (setq company-candidates-cache (cons company-prefix company-candidates)))
-
-(defun company-filter-delete-char ()
-  (interactive)
-  (company-search-delete-char)
-  (let ((elem (pop company-search-match-stack)))
-    (when (consp elem)
-      (setq company-candidates (cdr elem))
-      (company-create-match-predicate)))
+  (company-search-update-string (string last-command-event))
+  (company-search-update-candidates
+   (sort (company-search-score company-candidates)
+         'company-search-sort-predicate))
   (company-call-frontends 'update))
 
-(defun company-filter-restore (search)
-  (company-search-assert-enabled)
-  (let ((candidates company-candidates)
-        laststr)
-    (dotimes (i (length search))
-      (setq laststr (substring search 0 i))
-      (push (cons laststr candidates) company-search-match-stack)
-      (setq company-candidates-predicate
-            `(lambda (candidate)
-               ,(if company-candidates-predicate
-                    `(and (string-match ,laststr candidate)
-                          (funcall ,company-candidates-predicate
-                                   candidate))
-                  `(string-match ,laststr candidate)))
-            candidates
-            (company-apply-predicate candidates company-candidates-predicate)))
-    (setq company-search-string search
-          company-search-lighter (concat " Search: \"" company-search-string "\""))
-    (let ((pos (company-search company-search-string company-candidates)))
-      (if (null pos)
-          (ding)
-        (company-set-selection (+ company-selection pos) t))))
-  (company-create-match-predicate)
-  (company-call-frontends 'update))
+(defun company-search-delete-char ()
+  (interactive)
+  (if (= 0 (length company-search-string))
+      (ding)
+    (company-search-update-string nil)
+    (company-search-update-candidates
+     (sort (company-search-score company-search-saved-candidates)
+           'company-search-sort-predicate))
+    (company-call-frontends 'update)))
 
 (defun company-filter-printing-char ()
   (interactive)
-  (company-search-assert-enabled)
-  (push (cons company-search-string company-candidates)
-        company-search-match-stack)
-  (company-search-printing-char)
-  (company-create-match-predicate)
+  (company-search-update-string (string last-command-event))
+  (company-search-update-candidates
+   (sort (company-filter-score company-candidates)
+         'company-search-sort-predicate))
   (company-call-frontends 'update))
+
+(defun company-filter-delete-char ()
+  (interactive)
+  (if (= 0 (length company-search-string))
+      (ding)
+    (company-search-update-string nil)
+    (company-search-update-candidates
+     (sort (company-filter-score company-search-saved-candidates)
+           'company-search-sort-predicate))
+    (company-call-frontends 'update)))
 
 (defun company-search-kill-others ()
   "Limit the completion candidates to the ones matching the search string."
   (interactive)
   (company-search-assert-enabled)
-  (company-create-match-predicate)
+  (let (new)
+    (loop for item in company-candidates
+          do (when (cdr item)
+               (push (car item) new)))
+    (company-update-candidates (nreverse new)))
   (company-search-mode 0)
   (company-call-frontends 'update))
 
@@ -1520,11 +1504,14 @@ Keywords and function definition names are ignored."
   "Abort searching the completion candidates."
   (interactive)
   (company-set-selection company-search-old-selection t)
-  (company-search-mode 0))
+  (company-update-candidates (mapcar #'car company-search-saved-candidates))
+  (company-search-mode 0)
+  (company-call-frontends 'update))
 
 (defun company-search-other-char ()
   (interactive)
   (company-search-assert-enabled)
+  (setq company-candidates (mapcar #'car company-candidates))
   (company-search-mode 0)
   (company--unread-last-input))
 
@@ -1548,17 +1535,15 @@ Keywords and function definition names are ignored."
     (while (< i 256)
       (define-key keymap (vector i) 'company-search-printing-char)
       (incf i))
-    (define-key keymap (kbd "<backspace>") 'company-search-delete-char)
     (let ((meta-map (make-sparse-keymap)))
       (define-key keymap (char-to-string meta-prefix-char) meta-map)
       (define-key keymap [escape] meta-map))
+    (define-key keymap (kbd "<backspace>") 'company-search-delete-char)
     (define-key keymap (vector meta-prefix-char t) 'company-search-other-char)
     (define-key keymap "\e\e\e" 'company-search-other-char)
     (define-key keymap  [escape escape escape] 'company-search-other-char)
 
     (define-key keymap "\C-g" 'company-search-abort)
-    (define-key keymap "\C-s" 'company-search-repeat-forward)
-    (define-key keymap "\C-r" 'company-search-repeat-backward)
     (define-key keymap "\C-o" 'company-search-kill-others)
     keymap)
   "Keymap used for incrementally searching the completion candidates.")
@@ -1571,13 +1556,16 @@ Don't start this directly, use `company-search-candidates' or
   (if company-search-mode
       (if (or company--explicit-action (company-manual-begin))
           (progn
-            (setq company-search-old-selection company-selection)
+            (setq company-search-old-selection company-selection
+                  company-search-saved-candidates
+                  (mapcar (lambda (a) (cons a (list 0 t))) company-candidates)
+                  company-candidates company-search-saved-candidates)
             (company-call-frontends 'update))
         (setq company-search-mode nil))
     (kill-local-variable 'company-search-string)
     (kill-local-variable 'company-search-lighter)
     (kill-local-variable 'company-search-old-selection)
-    (kill-local-variable 'company-search-match-stack)
+    (kill-local-variable 'company-search-saved-candidates)
     (company-enable-overriding-keymap company-active-map)))
 
 (defun company-search-assert-enabled ()
@@ -1745,11 +1733,13 @@ and invoke the normal binding."
   "Insert the common part of all candidates."
   (interactive)
   (when (company-manual-begin)
-    (if (and (not (cdr company-candidates))
-             (equal company-common (car company-candidates)))
-        (company-complete-selection)
-      (when company-common
-        (company--insert-candidate company-common)))))
+    (let ((item (car company-candidates)))
+      (if (and (not (cdr company-candidates))
+               (equal company-common
+                      (if (consp item) (car item) item)))
+          (company-complete-selection)
+        (when company-common
+          (company--insert-candidate company-common))))))
 
 (defun company-complete ()
   "Insert the common part of all candidates or the current selection.
@@ -1812,6 +1802,7 @@ To show the number next to the candidates in some back-ends, enable
 
 (defun company-fetch-metadata ()
   (let ((selected (nth company-selection company-candidates)))
+    (if (consp selected) (setq selected (car selected)))
     (unless (eq selected (car company-last-metadata))
       (setq company-last-metadata
             (cons selected (company-call-backend 'meta selected))))
@@ -1974,7 +1965,28 @@ Example: \(company-begin-with '\(\"foo\" \"foobar\" \"foobarbaz\"\)\)"
 (defsubst company-round-tab (arg)
   (* (/ (+ arg tab-width) tab-width) tab-width))
 
-(defun company-fill-propertize (value annotation width selected left right)
+(defun company-flx-propertize (line score &optional margin selected)
+  (unless (or (null score)
+              (eq t (cadr score)))
+    (unless margin (setq margin 0))
+    (let* ((prefix (length company-prefix))
+           (block-started (+ prefix margin (cadr score)))
+           (flx-face (if selected 'company-tooltip-highlight-selection
+                       'company-tooltip-highlight))
+           last-char)
+      (cl-loop for val in (cdr score)
+               do (let ((char (+ margin prefix val)))
+                    (when (and last-char
+                               (not (= (1+ last-char) char)))
+                      (put-text-property block-started  (1+ last-char)
+                                         'face flx-face line)
+                      (setq block-started char))
+                    (setq last-char char)))
+      (put-text-property block-started  (1+ last-char) 'face flx-face line)))
+  line)
+
+(defun company-fill-propertize (value annotation width selected
+                                      left right &optional score)
   (let* ((margin (length left))
          (common (+ (or (company-call-backend 'match value)
                         (length company-common)) margin))
@@ -2014,25 +2026,14 @@ Example: \(company-begin-with '\(\"foo\" \"foobar\" \"foobarbaz\"\)\)"
                            mouse-face company-tooltip-mouse)
                          line)
     (when selected
-      (if (and company-search-string
-               (string-match (regexp-quote company-search-string) value
-                             (length company-prefix)))
-          (let ((beg (+ margin (match-beginning 0)))
-                (end (+ margin (match-end 0))))
-            (add-text-properties beg end '(face company-tooltip-selection)
-                                 line)
-            (when (< beg common)
-              (add-text-properties beg common
-                                   '(face company-tooltip-common-selection)
-                                   line)))
-        (add-text-properties 0 width '(face company-tooltip-selection
-                                       mouse-face company-tooltip-selection)
-                             line)
-        (add-text-properties margin common
-                             '(face company-tooltip-common-selection
-                               mouse-face company-tooltip-selection)
-                             line)))
-    line))
+      (add-text-properties 0 width '(face company-tooltip-selection
+                                          mouse-face company-tooltip-selection)
+                           line)
+      (add-text-properties margin common
+                           '(face company-tooltip-common-selection
+                                  mouse-face company-tooltip-selection)
+                           line))
+    (company-flx-propertize line score margin selected)))
 
 ;;; replace
 (defsubst company--window-width ()
@@ -2090,12 +2091,13 @@ Example: \(company-begin-with '\(\"foo\" \"foobar\" \"foobarbaz\"\)\)"
 
     (dotimes (_ len)
       (let* ((value (pop lines-copy))
-             (annotation (company-call-backend 'annotation value)))
+             (str (company-reformat (if (consp value) (car value) value)))
+             (annotation (company-call-backend 'annotation str)))
         (when (and annotation company-tooltip-align-annotations)
           ;; `lisp-completion-at-point' adds a space.
           (setq annotation (comment-string-strip annotation t nil)))
         (push (cons value annotation) items)
-        (setq width (max (+ (string-width value)
+        (setq width (max (+ (string-width str)
                             (if (and annotation company-tooltip-align-annotations)
                                 (1+ (length annotation))
                               (length annotation)))
@@ -2117,10 +2119,13 @@ Example: \(company-begin-with '\(\"foo\" \"foobar\" \"foobarbaz\"\)\)"
 
       (dotimes (i len)
         (let* ((item (pop items))
-               (str (company-reformat (car item)))
+               (str (car item)) score
                (annotation (cdr item))
                (right (company-space-string company-tooltip-margin))
                (width width))
+          (when (consp str)
+              (setq score (cdr str)
+                    str (car str)))
           (when (< numbered 10)
             (decf width 2)
             (incf numbered)
@@ -2130,7 +2135,7 @@ Example: \(company-begin-with '\(\"foo\" \"foobar\" \"foobarbaz\"\)\)"
                                           width (equal i selection)
                                           (company-space-string
                                            company-tooltip-margin)
-                                          right)
+                                          right score)
                  (when scrollbar-bounds
                    (company--scrollbar i scrollbar-bounds)))
                 new)))
@@ -2413,20 +2418,17 @@ current window."
 
   (setq company-preview-overlay (make-overlay pos (1+ pos)))
 
-  (let ((completion (nth company-selection company-candidates)))
+  (let ((completion (nth company-selection company-candidates))
+        score)
+    (when (consp completion)
+      (setq score (cdr completion)
+            completion (car completion)))
     (setq completion (propertize completion 'face 'company-preview))
     (add-text-properties 0 (length company-common)
                          '(face company-preview-common) completion)
 
-    ;; Add search string
-    (and company-search-string
-         (string-match (regexp-quote company-search-string) completion)
-         (add-text-properties (match-beginning 0)
-                              (match-end 0)
-                              '(face company-preview-search)
-                              completion))
-
-    (setq completion (company-strip-prefix completion))
+    (setq completion
+          (company-strip-prefix (company-flx-propertize completion score)))
 
     (and (equal pos (point))
          (not (equal completion ""))
@@ -2499,7 +2501,8 @@ current window."
         comp msg)
 
     (while candidates
-      (setq comp (company-reformat (pop candidates))
+      (setq comp (pop candidates)
+            comp (company-reformat (if (consp comp) (car comp) comp))
             len (+ len 1 (length comp)))
       (if (< i 10)
           ;; Add number.
@@ -2529,7 +2532,8 @@ current window."
         msg comp)
 
     (while candidates
-      (setq comp (company-strip-prefix (pop candidates))
+      (setq comp (pop candidates)
+            comp (company-strip-prefix (if (consp comp) (car comp) comp))
             len (+ len 2 (length comp)))
       (when (< i 10)
         ;; Add number.
