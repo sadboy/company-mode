@@ -1148,7 +1148,7 @@ Keywords and function definition names are ignored."
           (when (ignore-errors (company-begin-backend backend))
             (return t)))
         (when (and company-candidates search)
-          (company-search-restore search)))
+          (company-search-restore search t)))
     (company-manual-begin))
   (unless company-candidates
     (error "No other back-end")))
@@ -1445,10 +1445,11 @@ Keywords and function definition names are ignored."
   (and (not (null (cdr a)))
        (or (null (cdr b)) (> (cadr a) (cadr b)))))
 
-(defun company-search-restore (str)
+(defun company-search-restore (str &optional filter)
   (company-search-update-string str)
   (company-search-update-candidates
-   (sort (company-search-score company-candidates)
+   (sort (funcall (if filter 'company-filter-score 'company-search-score)
+                  company-candidates)
          'company-search-sort-predicate))
   (company-call-frontends 'update))
 
