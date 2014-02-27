@@ -93,7 +93,8 @@ comments or strings."
                    company-dabbrev-code-time-limit
                    company-dabbrev-code-other-buffers t)))
     (ignore-case company-dabbrev-code-ignore-case)
-    (duplicates t)))
+    (sorted t)
+    (duplicates nil)))
 
 (provide 'company-dabbrev-code)
 ;;; company-dabbrev-code.el ends here
