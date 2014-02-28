@@ -1358,7 +1358,8 @@ Keywords and function definition names are ignored."
                 (if (cdr item)
                     (cons (car item)
                           (flx-score (company-strip-prefix (car item))
-                                     company-search-string))
+                                     company-search-string
+                                     flx-strings-cache))
                   item))
               candidates)
     candidates))
@@ -1370,7 +1371,8 @@ Keywords and function definition names are ignored."
               do (when (cdr item)
                    (let* ((str (car item))
                           (score (flx-score (company-strip-prefix str)
-                                            company-search-string)))
+                                            company-search-string
+                                            flx-strings-cache)))
                      (when score
                        (push (cons str score) new)))))
         new)
