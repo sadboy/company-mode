@@ -1237,7 +1237,6 @@ Keywords and function definition names are ignored."
                        (setq new-prefix (or (car-safe new-prefix) new-prefix))
                        (= (- (point) (length new-prefix))
                           (- company-point (length company-prefix))))
-              (setq new-prefix (or (car-safe new-prefix) new-prefix))
               (company-calculate-candidates new-prefix))))
     (cond
      ((eq c t)
@@ -2003,6 +2002,7 @@ Example: \(company-begin-with '\(\"foo\" \"foobar\" \"foobarbaz\"\)\)"
                                (1+ (length value))
                              (- width (length annotation)))
                          (length value))))
+         (ann-end (min (+ ann-start (length annotation)) width))
          (line (concat left
                        (if (or ann-truncate (not ann-ralign))
                            (company-safe-substring
@@ -2024,10 +2024,11 @@ Example: \(company-begin-with '\(\"foo\" \"foobar\" \"foobarbaz\"\)\)"
                          '(face company-tooltip-common
                            mouse-face company-tooltip-mouse)
                          line)
-    (add-text-properties ann-start (min (+ ann-start (length annotation)) width)
-                         '(face company-tooltip-annotation
-                           mouse-face company-tooltip-mouse)
-                         line)
+    (when (< ann-start ann-end)
+      (add-text-properties ann-start ann-end
+                           '(face company-tooltip-annotation
+                             mouse-face company-tooltip-mouse)
+                           line))
     (when selected
       (add-text-properties 0 width '(face company-tooltip-selection
                                           mouse-face company-tooltip-selection)
