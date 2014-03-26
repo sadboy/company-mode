@@ -2,6 +2,25 @@
 
 ## Next
 
+* New user option `company-abort-manual-when-too-short`.
+
+## 2014-03-25 (0.7.3)
+
+* New user option `company-etags-ignore-case`.
+
+## 2014-03-19 (0.7.2)
+
+* Support for Emacs 22 officially dropped.
+* `company-clang` supports `indent-tabs-mode` and multibyte chars before point.
+
+## 2014-03-18 (0.7.1)
+
+* Group of back-ends can now contain keyword `:with`, which makes all back-ends
+  after it to be skipped for prefix calculation.
+* New function `company-version`.
+* New bundled back-end `company-yasnippet`.
+* Completion candidates returned from grouped back-ends are tagged to remember
+  which back-end each came from.
 * New user option `company-tooltip-align-annotations`, off by default.
 * New bundled back-end `company-bbdb`.
 

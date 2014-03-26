@@ -4,10 +4,10 @@
 
 ;; Author: Nikolaj Schumacher
 ;; Maintainer: Dmitry Gutov <dgutov@yandex.ru>
-;; Version: 0.7
+;; Version: 0.7.3
 ;; Keywords: abbrev, convenience, matching
 ;; URL: http://company-mode.github.io/
-;; Compatibility: GNU Emacs 22.x, GNU Emacs 23.x, GNU Emacs 24.x
+;; Compatibility: GNU Emacs 23.x, GNU Emacs 24.x
 
 ;; This file is part of GNU Emacs.
 
@@ -315,13 +315,10 @@ If this many lines are not available, prefer to display the tooltip above."
                               company-xcode company-ropemacs company-cmake
                               ,@(when company--include-capf
                                   (list 'company-capf))
-                              (company-gtags company-etags company-dabbrev-code
+                              (company-dabbrev-code company-gtags company-etags
                                company-keywords)
                               company-oddmuse company-files company-dabbrev)
   "The list of active back-ends (completion engines).
-Each list elements can itself be a list of back-ends.  In that case their
-completions are merged.  Otherwise only the first matching back-end returns
-results.
 
 `company-begin-backend' can be used to start a specific back-end,
 `company-other-backend' will skip to the next matching back-end in the list.
@@ -396,7 +393,22 @@ modify it, e.g. to expand a snippet.
 
 The back-end should return nil for all commands it does not support or
 does not know about.  It should also be callable interactively and use
-`company-begin-backend' to start itself in that case."
+`company-begin-backend' to start itself in that case.
+
+Grouped back-ends:
+
+An element of `company-backends' can also itself be a list of back-ends,
+then it's considered to be a \"grouped\" back-end.
+
+When possible, commands taking a candidate as an argument are dispatched to
+the back-end it came from.  In other cases, the first non-nil value among
+all the back-ends is returned.
+
+The latter is the case for the `prefix' command.  But if the group contains
+the keyword `:with', the back-ends after it are ignored for this command.
+
+The completions from back-ends in a group are merged (but only from those
+that return the same `prefix')."
   :type `(repeat
           (choice
            :tag "Back-end"
@@ -408,6 +420,7 @@ does not know about.  It should also be callable interactively and use
                            ,@(mapcar (lambda (b)
                                        `(const :tag ,(cdr b) ,(car b)))
                                      company-safe-backends)
+                           (const :tag "With" :with)
                            (symbol :tag "User defined"))))))
 
 (put 'company-backends 'safe-local-variable 'company-safe-backends-p)
@@ -444,6 +457,12 @@ back-end, consider using the `post-completion' command instead."
 (defcustom company-minimum-prefix-length 3
   "The minimum prefix length for idle completion."
   :type '(integer :tag "prefix length"))
+
+(defcustom company-abort-manual-when-too-short nil
+  "If enabled, cancel a manually started completion when the prefix gets
+shorter than both `company-minimum-prefix-length' and the length of the
+prefix it was started from."
+  :type 'boolean)
 
 (defcustom company-require-match 'company-explicit-action-p
   "If enabled, disallow non-matching input.
@@ -623,21 +642,25 @@ commands in the `company-' namespace, abort completion."
   (and (symbolp backend)
        (not (fboundp backend))
        (ignore-errors (require backend nil t)))
-
-  (if (or (symbolp backend)
-          (functionp backend))
-      (condition-case err
-          (progn
-            (funcall backend 'init)
-            (put backend 'company-init t))
-        (error
-         (put backend 'company-init 'failed)
-         (unless (memq backend company--disabled-backends)
-           (message "Company back-end '%s' could not be initialized:\n%s"
-                    backend (error-message-string err)))
-         (pushnew backend company--disabled-backends)
-         nil))
-    (mapc 'company-init-backend backend)))
+  (cond
+   ((symbolp backend)
+    (condition-case err
+        (progn
+          (funcall backend 'init)
+          (put backend 'company-init t))
+      (error
+       (put backend 'company-init 'failed)
+       (unless (memq backend company--disabled-backends)
+         (message "Company back-end '%s' could not be initialized:\n%s"
+                  backend (error-message-string err)))
+       (pushnew backend company--disabled-backends)
+       nil)))
+   ;; No initialization for lambdas.
+   ((functionp backend) t)
+   (t ;; Must be a list.
+    (dolist (b backend)
+      (unless (keywordp b)
+        (company-init-backend b))))))
 
 (defvar company-default-lighter " company")
 
@@ -823,19 +846,35 @@ means that `company-mode' is always turned on except in `message-mode' buffers."
                         when (not (and (symbolp b)
                                        (eq 'failed (get b 'company-init))))
                         collect b)))
+    (setq backends
+          (if (eq command 'prefix)
+              (butlast backends (length (member :with backends)))
+            (delq :with backends)))
     (case command
       (candidates
-       (loop for backend in backends
-             when (equal (funcall backend 'prefix)
-                         (car args))
-             append (apply backend 'candidates args)))
+       ;; Small perf optimization: don't tag the candidates received
+       ;; from the first backend in the group.
+       (append (apply (car backends) 'candidates args)
+               (loop for backend in (cdr backends)
+                     when (equal (funcall backend 'prefix)
+                                 (car args))
+                     append (mapcar
+                             (lambda (str)
+                               (propertize str 'company-backend backend))
+                             (apply backend 'candidates args)))))
       (sorted nil)
       (duplicates t)
-      (otherwise
+      ((prefix ignore-case no-cache require-match)
        (let (value)
          (dolist (backend backends)
            (when (setq value (apply backend command args))
-             (return value))))))))
+             (return value)))))
+      (otherwise
+       (let ((arg (car args)))
+         (when (> (length arg) 0)
+           (let ((backend (or (get-text-property 0 'company-backend arg)
+                              (car backends))))
+             (apply backend command args))))))))
 
 ;;; completion mechanism ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -863,9 +902,12 @@ means that `company-mode' is always turned on except in `message-mode' buffers."
 (defvar company-selection-changed nil)
 (make-variable-buffer-local 'company-selection-changed)
 
-(defvar company--explicit-action nil
-  "Non-nil, if explicit completion took place.")
-(make-variable-buffer-local 'company--explicit-action)
+(defvar company--manual-action nil
+  "Non-nil, if manual completion took place.")
+(make-variable-buffer-local 'company--manual-action)
+
+(defvar company--manual-prefix nil)
+(make-variable-buffer-local 'company--manual-prefix)
 
 (defvar company--auto-completion nil
   "Non-nil when current candidate is being inserted automatically.
@@ -906,7 +948,7 @@ can retrieve meta-data for them."
 
 (defun company-explicit-action-p ()
   "Return whether explicit completion action was taken by the user."
-  (or company--explicit-action
+  (or company--manual-action
       company-selection-changed))
 
 (defun company-reformat (candidate)
@@ -1094,7 +1136,7 @@ Keywords and function definition names are ignored."
                    t))))
            candidates)))
     (nconc
-     (mapcar #'car (sort occurs (lambda (e1 e2) (< (cdr e1) (cdr e2)))))
+     (mapcar #'car (sort occurs (lambda (e1 e2) (<= (cdr e1) (cdr e2)))))
      noccurs)))
 
 (defun company-idle-begin (buf win tick pos)
@@ -1119,18 +1161,20 @@ Keywords and function definition names are ignored."
                   (message "%s" (error-message-string err))
                   (company-cancel))
            (quit (company-cancel)))))
+  (unless company-candidates
+    (setq company-backend nil))
   ;; Return non-nil if active.
   company-candidates)
 
 (defun company-manual-begin ()
   (interactive)
   (company-assert-enabled)
-  (setq company--explicit-action t)
+  (setq company--manual-action t)
   (unwind-protect
       (let ((company-minimum-prefix-length 0))
         (company-auto-begin))
     (unless company-candidates
-      (setq company--explicit-action nil))))
+      (setq company--manual-action nil))))
 
 ;;;###autoload
 (defun company-other-backend (&optional backward)
@@ -1221,12 +1265,15 @@ Keywords and function definition names are ignored."
      (t (company-cancel)))))
 
 (defun company--good-prefix-p (prefix)
-  (and (or (company-explicit-action-p)
-           (unless (eq prefix 'stop)
-             (or (eq (cdr-safe prefix) t)
-                 (>= (or (cdr-safe prefix) (length prefix))
-                     company-minimum-prefix-length))))
-       (stringp (or (car-safe prefix) prefix))))
+  (and (stringp (or (car-safe prefix) prefix)) ;excludes 'stop
+       (or (eq (cdr-safe prefix) t)
+           (let ((len (or (cdr-safe prefix) (length prefix))))
+             (if company--manual-prefix
+                 (or (not company-abort-manual-when-too-short)
+                     ;; Must not be less than minimum or initial length.
+                     (>= len (min company-minimum-prefix-length
+                                  (length company--manual-prefix))))
+               (>= len company-minimum-prefix-length))))))
 
 (defun company--continue ()
   (when (company-call-backend 'no-cache company-prefix)
@@ -1273,9 +1320,11 @@ Keywords and function definition names are ignored."
               c (company-calculate-candidates prefix))
         ;; t means complete/unique.  We don't start, so no hooks.
         (if (not (consp c))
-            (when company--explicit-action
+            (when company--manual-action
               (message "No completion found"))
           (setq company-prefix prefix)
+          (when company--manual-action
+            (setq company--manual-prefix prefix))
           (when (symbolp backend)
             (setq company-lighter (concat " " (symbol-name backend))))
           (company-update-candidates c)
@@ -1294,7 +1343,7 @@ Keywords and function definition names are ignored."
     (setq company-point (point)
           company--point-max (point-max))
     (company-ensure-emulation-alist)
-    (if (not company--explicit-action)
+    (if (not company--manual-action)
         (company-enable-overriding-keymap company-active-map)
       (company-enable-overriding-keymap company-manual-map)
       (company-search-mode 1)
@@ -1318,7 +1367,8 @@ Keywords and function definition names are ignored."
         company-common nil
         company-selection 0
         company-selection-changed nil
-        company--explicit-action nil
+        company--manual-action nil
+        company--manual-prefix nil
         company-lighter company-default-lighter
         company--point-max nil
         company-point nil)
@@ -1556,7 +1606,7 @@ Don't start this directly, use `company-search-candidates' or
 `company-filter-candidates'."
   nil company-search-lighter nil
   (if company-search-mode
-      (if (or company--explicit-action (company-manual-begin))
+      (if (or company--manual-action (company-manual-begin))
           (progn
             (setq company-search-old-selection company-selection
                   company-search-saved-candidates
@@ -1903,9 +1953,7 @@ To show the number next to the candidates in some back-ends, enable
   (setq company-backend backend)
   ;; Return non-nil if active.
   (or (company-manual-begin)
-      (progn
-        (setq company-backend nil)
-        (error "Cannot complete at point"))))
+      (error "Cannot complete at point")))
 
 (defun company-begin-with (candidates
                            &optional prefix-length require-match callback)
@@ -1932,6 +1980,18 @@ Example: \(company-begin-with '\(\"foo\" \"foobar\" \"foobarbaz\"\)\)"
        ((eq command 'require-match)
         ,require-match)))
    callback))
+
+(defun company-version (&optional show-version)
+  "Get the Company version as string.
+
+If SHOW-VERSION is non-nil, show the version in the echo area."
+  (interactive (list t))
+  (with-temp-buffer
+    (insert-file-contents (find-library-name "company"))
+    (require 'lisp-mnt)
+    (if show-version
+        (message "Company version: %s" (lm-version))
+      (lm-version))))
 
 ;;; pseudo-tooltip ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -2002,7 +2062,7 @@ Example: \(company-begin-with '\(\"foo\" \"foobar\" \"foobarbaz\"\)\)"
                                (1+ (length value))
                              (- width (length annotation)))
                          (length value))))
-         (ann-end (min (+ ann-start (length annotation)) width))
+         (ann-end (min (+ ann-start (length annotation)) (+ margin width)))
          (line (concat left
                        (if (or ann-truncate (not ann-ralign))
                            (company-safe-substring

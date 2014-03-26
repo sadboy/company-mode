@@ -46,12 +46,48 @@
 
 (ert-deftest company-good-prefix ()
   (let ((company-minimum-prefix-length 5)
-        company--explicit-action)
+        company-abort-manual-when-too-short
+        company--manual-action            ;idle begin
+        (company-selection-changed t))    ;has no effect
     (should (eq t (company--good-prefix-p "!@#$%")))
     (should (eq nil (company--good-prefix-p "abcd")))
     (should (eq nil (company--good-prefix-p 'stop)))
     (should (eq t (company--good-prefix-p '("foo" . 5))))
-    (should (eq nil (company--good-prefix-p '("foo" . 4))))))
+    (should (eq nil (company--good-prefix-p '("foo" . 4))))
+    (should (eq t (company--good-prefix-p '("foo" . t))))))
+
+(ert-deftest company--manual-prefix-set-and-unset ()
+  (with-temp-buffer
+    (insert "ab")
+    (company-mode)
+    (let (company-frontends
+          (company-backends
+           (list (lambda (command &optional arg)
+                   (case command
+                     (prefix (buffer-substring (point-min) (point)))
+                     (candidates '("abc" "abd")))))))
+      (company-manual-begin)
+      (should (equal "ab" company--manual-prefix))
+      (company-abort)
+      (should (null company--manual-prefix)))))
+
+(ert-deftest company-abort-manual-when-too-short ()
+  (let ((company-minimum-prefix-length 5)
+        (company-abort-manual-when-too-short t)
+        (company-selection-changed t))    ;has not effect
+    (let ((company--manual-action nil))   ;idle begin
+      (should (eq t (company--good-prefix-p "!@#$%")))
+      (should (eq t (company--good-prefix-p '("foo" . 5))))
+      (should (eq t (company--good-prefix-p '("foo" . t)))))
+    (let ((company--manual-action t)
+          (company--manual-prefix "abc")) ;manual begin from this prefix
+      (should (eq t (company--good-prefix-p "!@#$")))
+      (should (eq nil (company--good-prefix-p "ab")))
+      (should (eq nil (company--good-prefix-p 'stop)))
+      (should (eq t (company--good-prefix-p '("foo" . 4))))
+      (should (eq t (company--good-prefix-p "abcd")))
+      (should (eq t (company--good-prefix-p "abc")))
+      (should (eq t (company--good-prefix-p '("bar" . t)))))))
 
 (ert-deftest company-multi-backend-with-lambdas ()
   (let ((company-backend
@@ -64,6 +100,44 @@
                    (prefix "z")
                    (candidates '("c" "d")))))))
     (should (equal (company-call-backend 'candidates "z") '("a" "b" "c" "d")))))
+
+(ert-deftest company-multi-backend-remembers-candidate-backend ()
+  (let ((company-backend
+         (list (lambda (command &optional arg &rest ignore)
+                 (case command
+                   (ignore-case nil)
+                   (annotation "1")
+                   (candidates '("a" "c"))
+                   (post-completion "13")))
+               (lambda (command &optional arg &rest ignore)
+                 (case command
+                   (ignore-case t)
+                   (annotation "2")
+                   (candidates '("b" "d"))
+                   (post-completion "42"))))))
+    (let ((candidates (company-calculate-candidates nil)))
+      (should (equal candidates '("a" "b" "c" "d")))
+      (should (equal t (company-call-backend 'ignore-case)))
+      (should (equal "1" (company-call-backend 'annotation (nth 0 candidates))))
+      (should (equal "2" (company-call-backend 'annotation (nth 1 candidates))))
+      (should (equal "13" (company-call-backend 'post-completion (nth 2 candidates))))
+      (should (equal "42" (company-call-backend 'post-completion (nth 3 candidates)))))))
+
+(ert-deftest company-multi-backend-handles-keyword-with ()
+  (let ((primo (lambda (command &optional arg)
+                 (case command
+                   (prefix "a")
+                   (candidates '("abb" "abc" "abd")))))
+        (secundo (lambda (command &optional arg)
+                   (case command
+                     (prefix "a")
+                     (candidates '("acc" "acd"))))))
+    (let ((company-backend (list 'ignore 'ignore :with secundo)))
+      (should (null (company-call-backend 'prefix))))
+    (let ((company-backend (list 'ignore primo :with secundo)))
+      (should (equal "a" (company-call-backend 'prefix)))
+      (should (equal '("abb" "abc" "abd" "acc" "acd")
+                     (company-call-backend 'candidates "a"))))))
 
 (ert-deftest company-begin-backend-failure-doesnt-break-company-backends ()
   (with-temp-buffer
@@ -289,7 +363,8 @@
     (search-backward "bb")
     (let ((col (company--column))
           (company-candidates-length 3)
-          (company-candidates '("123" "45" "67890")))
+          (company-candidates '("123" "45" "67890"))
+          (company-backend 'ignore))
       (company-pseudo-tooltip-show-at-point (point))
       (let ((ov company-pseudo-tooltip-overlay))
         ;; With margins.
@@ -362,7 +437,8 @@
 (ert-deftest company-create-lines-shows-numbers ()
   (let ((company-show-numbers t)
         (company-candidates '("x" "y" "z"))
-        (company-candidates-length 3))
+        (company-candidates-length 3)
+        (company-backend 'ignore))
     (should (equal '(" x 1 " " y 2 " " z 3 ")
                    (company--create-lines 0 999)))))
 
