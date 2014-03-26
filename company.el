@@ -1448,7 +1448,7 @@ Keywords and function definition names are ignored."
 
 (defun company-search-restore (str &optional filter)
   (company-search-update-string str)
-  (company-search-update-candidates
+  (company-update-candidates
    (sort (funcall (if filter 'company-filter-score 'company-search-score)
                   company-candidates)
          'company-search-sort-predicate))
