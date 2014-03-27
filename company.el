@@ -593,7 +593,7 @@ commands in the `company-' namespace, abort completion."
     keymap)
   "Keymap that is enabled during an active completion.")
 
-(defvar company-accept-and-insert-list '(" " "." "," "/" ";" ":" "?" "!" "-"
+(defvar company-accept-and-insert-list '(" " "." "," "/" ";" ":" "?" "!" "-" "="
                                          "[" "]" "(" ")" "{" "}" "|" "\\" "'"
                                          "<" ">" "\M-(" "\""
                                          "\C-a" "\C-e" "\C-f" "\C-b" "\C-n"
@@ -1180,20 +1180,22 @@ Keywords and function definition names are ignored."
 (defun company-other-backend (&optional backward)
   (interactive (list current-prefix-arg))
   (company-assert-enabled)
-  (if company-backend
-      (let* ((after (cdr (member company-backend company-backends)))
-             (before (cdr (member company-backend (reverse company-backends))))
-             (next (if backward
-                       (append before (reverse after))
-                     (append after (reverse before))))
-             (search company-search-string))
-        (company-cancel)
-        (dolist (backend next)
-          (when (ignore-errors (company-begin-backend backend))
-            (return t)))
-        (when (and company-candidates search)
-          (company-search-restore search t)))
-    (company-manual-begin))
+  (let* ((after (if company-backend
+                    (cdr (member company-backend company-backends))
+                  company-backends))
+         (before (if company-backend
+                     (cdr (member company-backend (reverse company-backends)))
+                   nil))
+         (next (if backward
+                   (append before (reverse after))
+                 (append after (reverse before))))
+         (search company-search-string))
+    (company-cancel)
+    (dolist (backend next)
+      (when (ignore-errors (company-begin-backend backend))
+        (return t)))
+    (when (and company-candidates search)
+      (company-search-restore search t)))
   (unless company-candidates
     (error "No other back-end")))
 
