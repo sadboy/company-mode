@@ -1656,6 +1656,8 @@ uses the search string to limit the completion candidates."
 
 (defvar company-explicit-map
   (let ((keymap (make-keymap)))
+    (set-keymap-parent keymap company-filter-map)
+
     (define-key keymap (kbd "C-g") 'company-abort)
     (define-key keymap (kbd "M-n") 'company-select-next)
     (define-key keymap (kbd "M-p") 'company-select-previous)
@@ -1667,8 +1669,6 @@ uses the search string to limit the completion candidates."
       (define-key keymap key 'company-accept-and-pass-through))
     (dolist (key company-reject-and-insert-list)
       (define-key keymap key 'company-reject-and-pass-through))
-
-    (set-keymap-parent keymap company-filter-map)
     keymap)
   "Keymap used for incrementally searching the completion candidates.")
 
