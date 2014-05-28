@@ -26,7 +26,7 @@
 ;;; Code:
 
 (require 'company)
-(eval-when-compile (require 'cl))
+(require 'cl-lib)
 
 (defgroup company-dabbrev nil
   "dabbrev-like completion back-end."
@@ -73,7 +73,7 @@ If you set this value to nil, you may also want to set
        (while ,test
          ,@body
          (and ,limit
-              (eq (incf company-time-limit-while-counter) 25)
+              (eq (cl-incf company-time-limit-while-counter) 25)
               (setq company-time-limit-while-counter 0)
               (> (float-time (time-since ,start)) ,limit)
               (throw 'done 'company-time-out))))))
@@ -119,7 +119,7 @@ If you set this value to nil, you may also want to set
          (symbols (company-dabbrev--search-buffer regexp (point) nil start limit
                                                   ignore-comments symbol-hash)))
     (when other-buffers
-      (dolist (buffer (delq (current-buffer) (buffer-list)))
+      (cl-dolist (buffer (delq (current-buffer) (buffer-list)))
         (and (or (eq other-buffers 'all)
                  (eq (buffer-local-value 'major-mode buffer) major-mode))
              (with-current-buffer buffer
@@ -136,7 +136,7 @@ If you set this value to nil, you may also want to set
 (defun company-dabbrev (command &optional arg &rest ignored)
   "dabbrev-like `company-mode' completion back-end."
   (interactive (list 'interactive))
-  (case command
+  (cl-case command
     (interactive (company-begin-backend 'company-dabbrev))
     (prefix (company-grab-word))
     (candidates

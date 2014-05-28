@@ -1,4 +1,4 @@
-;;; company-tests.el --- company-mode tests
+;;; company-tests.el --- company-mode tests  -*- lexical-binding: t -*-
 
 ;; Copyright (C) 2011, 2013-2014  Free Software Foundation, Inc.
 
@@ -25,11 +25,9 @@
 
 ;;; Code:
 
-(eval-when-compile (require 'cl))
 (require 'ert)
 (require 'company)
 (require 'company-keywords)
-(require 'company-elisp)
 (require 'company-clang)
 
 ;;; Core
@@ -63,7 +61,7 @@
     (let (company-frontends
           (company-backends
            (list (lambda (command &optional arg)
-                   (case command
+                   (cl-case command
                      (prefix (buffer-substring (point-min) (point)))
                      (candidates '("abc" "abd")))))))
       (company-manual-begin)
@@ -92,44 +90,67 @@
 (ert-deftest company-multi-backend-with-lambdas ()
   (let ((company-backend
          (list (lambda (command &optional arg &rest ignore)
-                 (case command
+                 (cl-case command
                    (prefix "z")
                    (candidates '("a" "b"))))
                (lambda (command &optional arg &rest ignore)
-                 (case command
+                 (cl-case command
                    (prefix "z")
                    (candidates '("c" "d")))))))
     (should (equal (company-call-backend 'candidates "z") '("a" "b" "c" "d")))))
 
-(ert-deftest company-multi-backend-remembers-candidate-backend ()
+(ert-deftest company-multi-backend-filters-backends-by-prefix ()
   (let ((company-backend
          (list (lambda (command &optional arg &rest ignore)
-                 (case command
+                 (cl-case command
+                   (prefix (cons "z" t))
+                   (candidates '("a" "b"))))
+               (lambda (command &optional arg &rest ignore)
+                 (cl-case command
+                   (prefix "t")
+                   (candidates '("c" "d"))))
+               (lambda (command &optional arg &rest ignore)
+                 (cl-case command
+                   (prefix "z")
+                   (candidates '("e" "f")))))))
+    (should (equal (company-call-backend 'candidates "z") '("a" "b" "e" "f")))))
+
+(ert-deftest company-multi-backend-remembers-candidate-backend ()
+  (let ((company-backend
+         (list (lambda (command &optional arg)
+                 (cl-case command
                    (ignore-case nil)
                    (annotation "1")
                    (candidates '("a" "c"))
                    (post-completion "13")))
-               (lambda (command &optional arg &rest ignore)
-                 (case command
+               (lambda (command &optional arg)
+                 (cl-case command
                    (ignore-case t)
                    (annotation "2")
                    (candidates '("b" "d"))
-                   (post-completion "42"))))))
+                   (post-completion "42")))
+               (lambda (command &optional arg)
+                 (cl-case command
+                   (annotation "3")
+                   (candidates '("e"))
+                   (post-completion "74"))))))
     (let ((candidates (company-calculate-candidates nil)))
-      (should (equal candidates '("a" "b" "c" "d")))
+      (should (equal candidates '("a" "b" "c" "d" "e")))
       (should (equal t (company-call-backend 'ignore-case)))
       (should (equal "1" (company-call-backend 'annotation (nth 0 candidates))))
       (should (equal "2" (company-call-backend 'annotation (nth 1 candidates))))
       (should (equal "13" (company-call-backend 'post-completion (nth 2 candidates))))
-      (should (equal "42" (company-call-backend 'post-completion (nth 3 candidates)))))))
+      (should (equal "42" (company-call-backend 'post-completion (nth 3 candidates))))
+      (should (equal "3" (company-call-backend 'annotation (nth 4 candidates))))
+      (should (equal "74" (company-call-backend 'post-completion (nth 4 candidates)))))))
 
 (ert-deftest company-multi-backend-handles-keyword-with ()
   (let ((primo (lambda (command &optional arg)
-                 (case command
+                 (cl-case command
                    (prefix "a")
                    (candidates '("abb" "abc" "abd")))))
         (secundo (lambda (command &optional arg)
-                   (case command
+                   (cl-case command
                      (prefix "a")
                      (candidates '("acc" "acd"))))))
     (let ((company-backend (list 'ignore 'ignore :with secundo)))
@@ -148,7 +169,7 @@
     (let (company-frontends
           (company-backends
            (list (lambda (command &optional arg)
-                   (case command
+                   (cl-case command
                      (prefix "a")
                      (candidates '("a" "ab" "ac")))))))
       (let (this-command)
@@ -163,7 +184,7 @@
           (company-require-match 'company-explicit-action-p)
           (company-backends
            (list (lambda (command &optional arg)
-                   (case command
+                   (cl-case command
                      (prefix (buffer-substring (point-min) (point)))
                      (candidates '("abc" "abd")))))))
       (let (this-command)
@@ -181,7 +202,7 @@
           (company-require-match 'company-explicit-action-p)
           (company-backends
            (list (lambda (command &optional arg)
-                   (case command
+                   (cl-case command
                      (prefix (buffer-substring (point-min) (point)))
                      (candidates '("abc" "abd")))))))
       (company-idle-begin (current-buffer) (selected-window)
@@ -199,7 +220,7 @@
           company-begin-commands
           (company-backends
            (list (lambda (command &optional arg)
-                   (case command
+                   (cl-case command
                      (prefix (buffer-substring (point-min) (point)))
                      (candidates '("abc" "abd")))))))
       (let ((company-continue-commands nil))
@@ -221,7 +242,7 @@
           company-begin-commands
           (company-backends
            (list (lambda (command &optional arg)
-                   (case command
+                   (cl-case command
                      (prefix (buffer-substring (point-min) (point)))
                      (candidates '("abc" "abd")))))))
       (let ((company-continue-commands '(not backward-delete-char)))
@@ -244,7 +265,7 @@
           (company-auto-complete-chars '(? ))
           (company-backends
            (list (lambda (command &optional arg)
-                   (case command
+                   (cl-case command
                      (prefix (buffer-substring (point-min) (point)))
                      (candidates '("abcd" "abef")))))))
       (let (this-command)
@@ -262,7 +283,7 @@
           (company-auto-complete-chars '(? ))
           (company-backends
            (list (lambda (command &optional arg)
-                   (case command
+                   (cl-case command
                      (prefix (buffer-substring (point-min) (point)))
                      (candidates '("abcd" "abef")))))))
       (company-idle-begin (current-buffer) (selected-window)
@@ -287,7 +308,7 @@
           company-end-of-buffer-workaround
           (company-backends
            (list (lambda (command &optional arg)
-                   (case command
+                   (cl-case command
                      (prefix (buffer-substring (point-min) (point)))
                      (candidates '("abcd" "abef"))
                      (ignore-case t))))))
@@ -307,7 +328,7 @@
     (let (company-frontends
           (company-backends
            (list (lambda (command &optional arg)
-                   (case command
+                   (cl-case command
                      (prefix (buffer-substring (point-min) (point)))
                      (candidates '("abcd" "abef"))
                      (ignore-case 'keep-prefix))))))
@@ -324,7 +345,7 @@
           company-end-of-buffer-workaround
           (company-backends
            (list (lambda (command &optional arg)
-                   (case command
+                   (cl-case command
                      (prefix (buffer-substring (point-min) (point)))
                      (candidates '("tea-cup" "teal-color")))))))
       (let (this-command)
@@ -344,7 +365,7 @@
             (company-begin-commands '(self-insert-command))
             (company-backends
              (list (lambda (c &optional arg)
-                     (case c (prefix "") (candidates '("a" "b" "c")))))))
+                     (cl-case c (prefix "") (candidates '("a" "b" "c")))))))
         (let (this-command)
           (company-call 'complete))
         (company-call 'open-line 1)
@@ -476,6 +497,147 @@
   (should (equal '(1 . 2) (company--scrollbar-bounds 3 4 12)))
   (should (equal '(1 . 3) (company--scrollbar-bounds 4 5 11))))
 
+;;; Async
+
+(defun company-async-backend (command &optional arg)
+  (pcase command
+    (`prefix "foo")
+    (`candidates
+     (cons :async
+           (lambda (cb)
+             (run-with-timer 0.05 nil
+                             #'funcall cb '("abc" "abd")))))))
+
+(ert-deftest company-call-backend-forces-sync ()
+  (let ((company-backend 'company-async-backend)
+        (company-async-timeout 0.1))
+    (should (equal '("abc" "abd") (company-call-backend 'candidates)))))
+
+(ert-deftest company-call-backend-errors-on-timeout ()
+  (with-temp-buffer
+    (let* ((company-backend (lambda (command &optional _arg)
+                              (pcase command
+                                (`candidates (cons :async 'ignore)))))
+           (company-async-timeout 0.1)
+           (err (should-error (company-call-backend 'candidates "foo"))))
+      (should (string-match-p "async timeout" (cadr err))))))
+
+(ert-deftest company-call-backend-raw-passes-return-value-verbatim ()
+  (let ((company-backend 'company-async-backend))
+    (should (equal "foo" (company-call-backend-raw 'prefix)))
+    (should (equal :async (car (company-call-backend-raw 'candidates "foo"))))
+    (should (equal 'closure (cadr (company-call-backend-raw 'candidates "foo"))))))
+
+(ert-deftest company-manual-begin-forces-async-candidates-to-sync ()
+  (with-temp-buffer
+    (company-mode)
+    (let (company-frontends
+          company-transformers
+          (company-backends (list 'company-async-backend)))
+      (company-manual-begin)
+      (should (equal "foo" company-prefix))
+      (should (equal '("abc" "abd") company-candidates)))))
+
+(ert-deftest company-idle-begin-allows-async-candidates ()
+  (with-temp-buffer
+    (company-mode)
+    (let (company-frontends
+          company-transformers
+          (company-backends (list 'company-async-backend)))
+      (company-idle-begin (current-buffer) (selected-window)
+                          (buffer-chars-modified-tick) (point))
+      (should (null company-candidates))
+      (sleep-for 0.1)
+      (should (equal "foo" company-prefix))
+      (should (equal '("abc" "abd") company-candidates)))))
+
+(ert-deftest company-idle-begin-cancels-async-candidates-if-buffer-changed ()
+  (with-temp-buffer
+    (company-mode)
+    (let (company-frontends
+          (company-backends (list 'company-async-backend)))
+      (company-idle-begin (current-buffer) (selected-window)
+                          (buffer-chars-modified-tick) (point))
+      (should (null company-candidates))
+      (insert "a")
+      (sleep-for 0.1)
+      (should (null company-candidates)))))
+
+(ert-deftest company-idle-begin-async-allows-immediate-callbacks ()
+  (with-temp-buffer
+    (company-mode)
+    (let (company-frontends
+          (company-backends
+           (list (lambda (command &optional arg)
+                   (pcase command
+                     (`prefix (buffer-substring (point-min) (point)))
+                     (`candidates
+                      (let ((c (all-completions arg '("abc" "def"))))
+                        (cons :async
+                              (lambda (cb) (funcall cb c)))))
+                     (`no-cache t)))))
+          (company-minimum-prefix-length 0))
+      (company-idle-begin (current-buffer) (selected-window)
+                          (buffer-chars-modified-tick) (point))
+      (should (equal '("abc" "def") company-candidates))
+      (let ((last-command-event ?a))
+        (company-call 'self-insert-command 1))
+      (should (equal '("abc") company-candidates)))))
+
+(ert-deftest company-multi-backend-forces-prefix-to-sync ()
+  (with-temp-buffer
+    (let ((company-backend (list 'ignore
+                                 (lambda (command)
+                                   (should (eq command 'prefix))
+                                   (cons :async
+                                         (lambda (cb)
+                                           (run-with-timer
+                                            0.01 nil
+                                            (lambda () (funcall cb nil))))))
+                                 (lambda (command)
+                                   (should (eq command 'prefix))
+                                   "foo"))))
+      (should (equal "foo" (company-call-backend-raw 'prefix))))
+    (let ((company-backend (list (lambda (_command)
+                                   (cons :async
+                                         (lambda (cb)
+                                           (run-with-timer
+                                            0.01 nil
+                                            (lambda () (funcall cb "bar"))))))
+                                 (lambda (_command)
+                                   "foo"))))
+      (should (equal "bar" (company-call-backend-raw 'prefix))))))
+
+(ert-deftest company-multi-backend-merges-deferred-candidates ()
+  (with-temp-buffer
+    (let* ((immediate (lambda (command &optional arg)
+                        (pcase command
+                          (`prefix "foo")
+                          (`candidates
+                           (cons :async
+                                 (lambda (cb) (funcall cb '("f"))))))))
+           (company-backend (list 'ignore
+                                  (lambda (command &optional arg)
+                                    (pcase command
+                                      (`prefix "foo")
+                                      (`candidates
+                                       (should (equal arg "foo"))
+                                       (cons :async
+                                             (lambda (cb)
+                                               (run-with-timer
+                                                0.01 nil
+                                                (lambda () (funcall cb '("a" "b")))))))))
+                                  (lambda (command &optional arg)
+                                    (pcase command
+                                      (`prefix "foo")
+                                      (`candidates '("c" "d" "e"))))
+                                  immediate)))
+      (should (equal :async (car (company-call-backend-raw 'candidates "foo"))))
+      (should (equal '("a" "b" "c" "d" "e" "f")
+                     (company-call-backend 'candidates "foo")))
+      (let ((company-backend (list immediate)))
+        (should (equal '("f") (company-call-backend 'candidates "foo")))))))
+
 ;;; Template
 
 (ert-deftest company-template-removed-after-the-last-jump ()
@@ -541,173 +703,6 @@
       (company-template-c-like-templatify text)
       (should (equal "foo(arg0, arg1)" (buffer-string)))
       (should (looking-at "arg0")))))
-
-;;; Elisp
-
-(defmacro company-elisp-with-buffer (contents &rest body)
-  (declare (indent 0))
-  `(with-temp-buffer
-     (insert ,contents)
-     (setq major-mode 'emacs-lisp-mode)
-     (re-search-backward "|")
-     (replace-match "")
-     (let ((company-elisp-detect-function-context t))
-       ,@body)))
-
-(ert-deftest company-elisp-candidates-predicate ()
-  (company-elisp-with-buffer
-    "(foo ba|)"
-    (should (eq (company-elisp--candidates-predicate "ba")
-                'boundp))
-    (should (eq (let (company-elisp-detect-function-context)
-                  (company-elisp--candidates-predicate "ba"))
-                'company-elisp--predicate)))
-  (company-elisp-with-buffer
-    "(foo| )"
-    (should (eq (company-elisp--candidates-predicate "foo")
-                'fboundp))
-    (should (eq (let (company-elisp-detect-function-context)
-                  (company-elisp--candidates-predicate "foo"))
-                'company-elisp--predicate)))
-  (company-elisp-with-buffer
-    "(foo 'b|)"
-    (should (eq (company-elisp--candidates-predicate "b")
-                'company-elisp--predicate))))
-
-(ert-deftest company-elisp-candidates-predicate-in-docstring ()
-  (company-elisp-with-buffer
-   "(def foo () \"Doo be doo `ide|"
-   (should (eq 'company-elisp--predicate
-               (company-elisp--candidates-predicate "ide")))))
-
-;; This one's also an integration test.
-(ert-deftest company-elisp-candidates-recognizes-binding-form ()
-  (let ((company-elisp-detect-function-context t)
-        (obarray [when what whelp])
-        (what 1)
-        (whelp 2)
-        (wisp 3))
-    (company-elisp-with-buffer
-      "(let ((foo 7) (wh| )))"
-      (should (equal '("what" "whelp")
-                     (company-elisp-candidates "wh"))))
-    (company-elisp-with-buffer
-      "(cond ((null nil) (wh| )))"
-      (should (equal '("when")
-                     (company-elisp-candidates "wh"))))))
-
-(ert-deftest company-elisp-candidates-predicate-binding-without-value ()
-  (loop for (text prefix predicate) in '(("(let (foo|" "foo" boundp)
-                                         ("(let (foo (bar|" "bar" boundp)
-                                         ("(let (foo) (bar|" "bar" fboundp))
-        do
-        (eval `(company-elisp-with-buffer
-                 ,text
-                 (should (eq ',predicate
-                             (company-elisp--candidates-predicate ,prefix)))))))
-
-(ert-deftest company-elisp-finds-vars ()
-  (let ((obarray [boo bar baz backquote])
-        (boo t)
-        (bar t)
-        (baz t))
-    (should (equal '("bar" "baz")
-                   (company-elisp--globals "ba" 'boundp)))))
-
-(ert-deftest company-elisp-finds-functions ()
-  (let ((obarray [when what whelp])
-        (what t)
-        (whelp t))
-    (should (equal '("when")
-                   (company-elisp--globals "wh" 'fboundp)))))
-
-(ert-deftest company-elisp-finds-things ()
-  (let ((obarray [when what whelp])
-        (what t)
-        (whelp t))
-    (should (equal '("what" "whelp" "when")
-                   (sort (company-elisp--globals "wh" 'company-elisp--predicate)
-                         'string<)))))
-
-(ert-deftest company-elisp-locals-vars ()
-  (company-elisp-with-buffer
-    "(let ((foo 5) (bar 6))
-       (cl-labels ((borg ()))
-         (lambda (boo baz)
-           b|)))"
-    (should (equal '("bar" "baz" "boo")
-                   (company-elisp--locals "b" nil)))))
-
-(ert-deftest company-elisp-locals-single-var ()
-  (company-elisp-with-buffer
-    "(dotimes (itk 100)
-       (dolist (item items)
-         it|))"
-    (should (equal '("itk" "item")
-                   (company-elisp--locals "it" nil)))))
-
-(ert-deftest company-elisp-locals-funs ()
-  (company-elisp-with-buffer
-    "(cl-labels ((foo ())
-                 (fee ()))
-       (let ((fun 4))
-         (f| )))"
-    (should (equal '("fee" "foo")
-                   (sort (company-elisp--locals "f" t) 'string<)))))
-
-(ert-deftest company-elisp-locals-skips-current-varlist ()
-  (company-elisp-with-buffer
-    "(let ((foo 1)
-           (f| )))"
-    (should (null (company-elisp--locals "f" nil)))))
-
-(ert-deftest company-elisp-show-locals-first ()
-  (company-elisp-with-buffer
-    "(let ((floo 1)
-           (flop 2)
-           (flee 3))
-       fl|)"
-    (let ((obarray [float-pi]))
-      (let (company-elisp-show-locals-first)
-        (should (eq nil (company-elisp 'sorted))))
-      (let ((company-elisp-show-locals-first t))
-        (should (eq t (company-elisp 'sorted)))
-        (should (equal '("flee" "floo" "flop" "float-pi")
-                       (company-elisp-candidates "fl")))))))
-
-(ert-deftest company-elisp-candidates-no-duplicates ()
-  (company-elisp-with-buffer
-    "(let ((float-pi 4))
-       f|)"
-    (let ((obarray [float-pi])
-          (company-elisp-show-locals-first t))
-      (should (equal '("float-pi") (company-elisp-candidates "f"))))))
-
-(ert-deftest company-elisp-shouldnt-complete-defun-name ()
-  (company-elisp-with-buffer
-    "(defun foob|)"
-    (should (null (company-elisp 'prefix)))))
-
-(ert-deftest company-elisp-should-complete-def-call ()
-  (company-elisp-with-buffer
-    "(defu|"
-    (should (equal "defu" (company-elisp 'prefix)))))
-
-(ert-deftest company-elisp-should-complete-in-defvar ()
-  ;; It will also complete the var name, at least for now.
-  (company-elisp-with-buffer
-    "(defvar abc de|"
-    (should (equal "de" (company-elisp 'prefix)))))
-
-(ert-deftest company-elisp-shouldnt-complete-in-defun-arglist ()
-  (company-elisp-with-buffer
-    "(defsubst foobar (ba|"
-    (should (null (company-elisp 'prefix)))))
-
-(ert-deftest company-elisp-prefix-in-defun-body ()
-  (company-elisp-with-buffer
-    "(defun foob ()|)"
-    (should (equal "" (company-elisp 'prefix)))))
 
 ;;; Clang
 

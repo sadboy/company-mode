@@ -26,7 +26,7 @@
 ;;; Code:
 
 (require 'company)
-(eval-when-compile (require 'cl))
+(require 'cl-lib)
 
 (defun company-files-directory-files (dir prefix)
   (ignore-errors
@@ -45,9 +45,9 @@
 (defun company-files-grab-existing-name ()
   ;; Grab file names with spaces, only when they include quotes.
   (let (file dir)
-    (and (dolist (regexp company-files-regexps)
+    (and (cl-dolist (regexp company-files-regexps)
            (when (setq file (company-grab-line regexp 1))
-             (return file)))
+             (cl-return file)))
          (setq dir (file-name-directory file))
          (not (string-match "//" dir))
          (file-exists-p dir)
@@ -59,17 +59,19 @@
 (defun company-files-complete (prefix)
   (let* ((dir (file-name-directory prefix))
          (file (file-name-nondirectory prefix))
-         candidates)
+         candidates directories)
     (unless (equal dir (car company-files-completion-cache))
       (dolist (file (company-files-directory-files dir file))
         (setq file (concat dir file))
         (push file candidates)
         (when (file-directory-p file)
-          ;; Add one level of children.
-          (dolist (child (company-files-directory-files file ""))
-            (push (concat file
-                          (unless (eq (aref file (1- (length file))) ?/) "/")
-                          child) candidates))))
+          (push file directories)))
+      (dolist (directory (reverse directories))
+        ;; Add one level of children.
+        (dolist (child (company-files-directory-files directory ""))
+          (push (concat directory
+                        (unless (eq (aref directory (1- (length directory))) ?/) "/")
+                        child) candidates)))
       (setq company-files-completion-cache (cons dir (nreverse candidates))))
     (all-completions prefix
                      (cdr company-files-completion-cache))))
@@ -78,7 +80,7 @@
 (defun company-files (command &optional arg &rest ignored)
   "`company-mode' completion back-end existing file names."
   (interactive (list 'interactive))
-  (case command
+  (cl-case command
     (interactive (company-begin-backend 'company-files))
     (prefix (company-files-grab-existing-name))
     (candidates (company-files-complete arg))
