@@ -1303,9 +1303,9 @@ Keywords and function definition names are ignored."
                  (append after (reverse before))))
          (search company-search-string))
     (company-cancel)
-    (dolist (backend next)
+    (cl-dolist (backend next)
       (when (ignore-errors (company-begin-backend backend))
-        (return t)))
+        (cl-return t)))
     (when (and company-candidates search)
       (company-search-restore search t)))
   (unless company-candidates
@@ -1447,10 +1447,10 @@ Keywords and function definition names are ignored."
           (run-hook-with-args 'company-completion-started-hook
                               (company-explicit-action-p))
           (company-call-frontends 'show))
-        (return c))
+        (cl-return c))
        ((and (eq prefix 'stop)
              (not (company-explicit-action-p)))
-        (return nil))))))
+        (cl-return nil))))))
 
 (defun company-begin ()
   (or (and company-candidates (company--continue))
@@ -1584,14 +1584,14 @@ Keywords and function definition names are ignored."
 (defsubst company-filter-score (candidates)
   (if (> (length company-search-string) 0)
       (let (new)
-        (loop for item in candidates
-              do (when (cdr item)
-                   (let* ((str (car item))
-                          (score (flx-score (company-strip-prefix str)
-                                            company-search-string
-                                            flx-strings-cache)))
-                     (when score
-                       (push (cons str score) new)))))
+        (cl-loop for item in candidates
+                 do (when (cdr item)
+                      (let* ((str (car item))
+                             (score (flx-score (company-strip-prefix str)
+                                               company-search-string
+                                               flx-strings-cache)))
+                        (when score
+                          (push (cons str score) new)))))
         new)
     candidates))
 
@@ -1662,9 +1662,9 @@ Keywords and function definition names are ignored."
   (interactive)
   (company-search-assert-enabled)
   (let (new)
-    (loop for item in company-candidates
-          do (when (cdr item)
-               (push (car item) new)))
+    (cl-loop for item in company-candidates
+             do (when (cdr item)
+                  (push (car item) new)))
     (company-update-candidates (nreverse new)))
   (company-search-mode 0)
   (company-call-frontends 'update))
@@ -2490,15 +2490,15 @@ current window."
          (adjcol (company--adjust-column column width))
          (inhibit-point-motion-hooks t))
     (save-excursion
-      (loop for ovl in ovls
-            do (let ((line (pop lines)))
-                 (overlay-put ovl 'company-line line)
-                 (when (and line (> (length line) 0)
-                          (or (not (= width oldwidth))
-                              (> nls 0)))
-                   (goto-char (overlay-start ovl))
-                   (vertical-motion 0)
-                   (company--create-line-overlay adjcol line ovl)))))
+      (cl-loop for ovl in ovls
+               do (let ((line (pop lines)))
+                    (overlay-put ovl 'company-line line)
+                    (when (and line (> (length line) 0)
+                               (or (not (= width oldwidth))
+                                   (> nls 0)))
+                      (goto-char (overlay-start ovl))
+                      (vertical-motion 0)
+                      (company--create-line-overlay adjcol line ovl)))))
     (overlay-put company-pseudo-tooltip-overlay 'company-width width)))
 
 (defun company-pseudo-tooltip-hide ()
