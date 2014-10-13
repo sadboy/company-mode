@@ -129,7 +129,7 @@ If you set this value to nil, you may also want to set
                                                      symbol-hash))))
         (and limit
              (> (float-time (time-since start)) limit)
-             (return))))
+             (cl-return))))
     (nreverse symbols)))
 
 ;;;###autoload
