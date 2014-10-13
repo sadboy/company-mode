@@ -616,7 +616,7 @@ asynchronous call into synchronous.")
   "Keymap that is enabled during an active completion.")
 
 (defvar company-accept-and-insert-list '(" " "." "," "/" ";" ":" "?" "!" "-" "="
-                                         "[" "]" "(" ")" "{" "}" "|" "\\" "'"
+                                         "[" "]" "(" ")" "{" "}" "|" "\\" "'" "`"
                                          "<" ">" "\M-(" "\""
                                          "\C-a" "\C-e" "\C-f" "\C-b" "\C-n"
                                          "\C-p" "\M-f" "\M-b" "\M-a" "\M-e" ))
@@ -639,7 +639,7 @@ asynchronous call into synchronous.")
     (define-key keymap [return] 'company-complete-selection)
     (define-key keymap (kbd "RET") 'company-complete-selection)
     (define-key keymap [tab] 'company-complete-common)
-    (define-key keymap (kbd "TAB") 'company-complete-common)
+    (define-key keymap (kbd "TAB") 'company-complete-selection)
     (define-key keymap (kbd "M-d") 'company-show-doc-buffer)
     (define-key keymap "\C-w" 'company-show-location)
     (define-key keymap "\C-s" 'company-search-candidates)
