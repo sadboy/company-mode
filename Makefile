@@ -32,16 +32,12 @@ clean-all: clean
 	@rm loaddefs.el
 
 test:
-	${EMACS} -Q -nw ${LOADPATH} -l company-tests.el -l company-elisp-tests.el \
+	${EMACS} -Q -nw ${LOADPATH} -l test/all.el \
 	--eval "(let (pop-up-windows) (ert t))"
 
 test-batch:
-	${EMACS} -Q --batch ${LOADPATH} -l company-tests.el -l company-elisp-tests.el \
+	${EMACS} -Q --batch ${LOADPATH} -l test/all.el \
 	--eval "(ert-run-tests-batch-and-exit '(not (tag interactive)))"
-
-downloads:
-	${EMACS} -Q --batch -l ert || \
-	${CURL} ${ERT_URL} > ert.el
 
 compile:
 	-@${EMACS} -Q --batch ${LOADPATH} -f batch-byte-compile company.el company-*.el

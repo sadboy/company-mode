@@ -1,6 +1,6 @@
 ;;; company-clang.el --- company-mode completion back-end for Clang  -*- lexical-binding: t -*-
 
-;; Copyright (C) 2009, 2011, 2013-2014  Free Software Foundation, Inc.
+;; Copyright (C) 2009, 2011, 2013-2015  Free Software Foundation, Inc.
 
 ;; Author: Nikolaj Schumacher
 
@@ -51,7 +51,7 @@ and `c-electric-colon', for automatic completion right after \">\" and
   "Additional arguments to pass to clang when completing.
 Prefix files (-include ...) can be selected with `company-clang-set-prefix'
 or automatically through a custom `company-clang-prefix-guesser'."
-  :type '(repeat (string :tag "Argument" nil)))
+  :type '(repeat (string :tag "Argument")))
 
 (defcustom company-clang-prefix-guesser 'company-clang-guess-prefix
   "A function to determine the prefix file for the current buffer."
@@ -61,7 +61,9 @@ or automatically through a custom `company-clang-prefix-guesser'."
   "Major modes which clang may complete.")
 
 (defcustom company-clang-insert-arguments t
-  "When non-nil, insert function arguments as a template after completion.")
+  "When non-nil, insert function arguments as a template after completion."
+  :type 'boolean
+  :package-version '(company . "0.8.0"))
 
 ;; prefix ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -148,7 +150,13 @@ or automatically through a custom `company-clang-prefix-guesser'."
      ((string-match "[^:]:[^:]" meta)
       (substring meta (1+ (match-beginning 0))))
      ((string-match "\\((.*)[ a-z]*\\'\\)" meta)
-      (match-string 1 meta)))))
+      (let ((paren (match-beginning 1)))
+        (if (not (eq (aref meta (1- paren)) ?>))
+            (match-string 1 meta)
+          (with-temp-buffer
+            (insert meta)
+            (goto-char paren)
+            (substring meta (1- (search-backward "<"))))))))))
 
 (defun company-clang--strip-formatting (text)
   (replace-regexp-in-string
@@ -180,8 +188,12 @@ or automatically through a custom `company-clang-prefix-guesser'."
 
 (defun company-clang--start-process (prefix callback &rest args)
   (let ((objc (derived-mode-p 'objc-mode))
-        (buf (get-buffer-create "*clang-output*")))
-    (with-current-buffer buf (erase-buffer))
+        (buf (get-buffer-create "*clang-output*"))
+        ;; Looks unnecessary in Emacs 25.1 and later.
+        (process-adaptive-read-buffering nil))
+    (with-current-buffer buf
+      (erase-buffer)
+      (setq buffer-undo-list t))
     (if (get-buffer-process buf)
         (funcall callback nil)
       (let ((process (apply #'start-process "company-clang" buf
@@ -318,7 +330,8 @@ passed via standard input."
                          (insert anno)
                          (if (string-match "\\`:[^:]" anno)
                              (company-clang-objc-templatify anno)
-                           (company-template-c-like-templatify anno)))))))
+                           (company-template-c-like-templatify
+                            (concat arg anno))))))))
 
 (provide 'company-clang)
 ;;; company-clang.el ends here
