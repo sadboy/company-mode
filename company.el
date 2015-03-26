@@ -863,7 +863,10 @@ means that `company-mode' is always turned on except in `message-mode' buffers."
   (company--posn-col-row (posn-at-point pos)))
 
 (defun company--row (&optional pos)
-  (cdr (company--col-row pos)))
+  (save-excursion
+    (when pos (goto-char pos))
+    (count-screen-lines (window-start)
+                        (progn (vertical-motion 0) (point)))))
 
 (defun company--column (&optional pos)
   (car (company--col-row pos)))
