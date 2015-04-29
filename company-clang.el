@@ -144,6 +144,18 @@ or automatically through a custom `company-clang-prefix-guesser'."
   (get-text-property 0 'meta candidate))
 
 (defun company-clang--annotation (candidate)
+  (let ((ann (company-clang--annotation-1 candidate)))
+    (if (not (and ann (string-prefix-p "(*)" ann)))
+        ann
+      (with-temp-buffer
+        (insert ann)
+        (search-backward ")")
+        (let ((pt (1+ (point))))
+          (re-search-forward ".\\_>" nil t)
+          (delete-region pt (point)))
+        (buffer-string)))))
+
+(defun company-clang--annotation-1 (candidate)
   (let ((meta (company-clang--meta candidate)))
     (cond
      ((null meta) nil)
@@ -276,24 +288,6 @@ or automatically through a custom `company-clang-prefix-guesser'."
               (/ ver 100)
             ver))
       0)))
-
-(defun company-clang-objc-templatify (selector)
-  (let* ((end (point-marker))
-         (beg (- (point) (length selector) 1))
-         (templ (company-template-declare-template beg end))
-         (cnt 0))
-    (save-excursion
-      (goto-char beg)
-      (catch 'stop
-        (while (search-forward ":" end t)
-          (when (looking-at "([^)]*) ?")
-            (delete-region (match-beginning 0) (match-end 0)))
-          (company-template-add-field templ (point) (format "arg%d" cnt))
-          (if (< (point) end)
-              (insert " ")
-            (throw 'stop t))
-          (cl-incf cnt))))
-    (company-template-move-to-first templ)))
 
 (defun company-clang (command &optional arg &rest ignored)
   "`company-mode' completion back-end for Clang.

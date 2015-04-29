@@ -74,6 +74,11 @@ This variable affects both `company-dabbrev' and `company-dabbrev-code'."
   :type 'integer
   :package-version '(company . "0.8.3"))
 
+(defcustom company-dabbrev-ignore-invisible nil
+  "Non-nil to skip invisible text."
+  :type 'boolean
+  :package-version '(company . "0.9.0"))
+
 (defmacro company-dabrev--time-limit-while (test start limit &rest body)
   (declare (indent 3) (debug t))
   `(let ((company-time-limit-while-counter 0))
@@ -95,29 +100,29 @@ This variable affects both `company-dabbrev' and `company-dabbrev-code'."
 (defun company-dabbrev--search-buffer (regexp pos symbols start limit
                                        ignore-comments symbol-hash)
   (save-excursion
-    (let (match)
-      (when pos
-        (goto-char (1- pos))
-        ;; search before pos
-        (company-dabrev--time-limit-while (re-search-backward regexp nil t)
-            start limit
-          (setq match (match-string-no-properties 0))
-          (if (and ignore-comments (company-in-string-or-comment))
-              (goto-char (nth 8 (syntax-ppss)))
-            (when (not (gethash match symbol-hash))
-              (puthash match t symbol-hash)
-              (push match symbols)))))
+    (cl-flet ((maybe-collect-match
+               ()
+               (let ((match (match-string-no-properties 0)))
+                 (when (and (>= (length match) company-dabbrev-minimum-length)
+                            (not (and company-dabbrev-ignore-invisible
+                                      (invisible-p (match-beginning 0))))
+                            (not (gethash match symbol-hash)))
+                   (puthash match t symbol-hash)
+                   (push match symbols)))))
+      (goto-char (if pos (1- pos) (point-min)))
+      ;; search before pos
+      (company-dabrev--time-limit-while (re-search-backward regexp nil t)
+          start limit
+        (if (and ignore-comments (save-match-data (company-in-string-or-comment)))
+            (goto-char (nth 8 (syntax-ppss)))
+          (maybe-collect-match)))
       (goto-char (or pos (point-min)))
       ;; search after pos
       (company-dabrev--time-limit-while (re-search-forward regexp nil t)
           start limit
-        (setq match (match-string-no-properties 0))
-        (if (and ignore-comments (company-in-string-or-comment))
+        (if (and ignore-comments (save-match-data (company-in-string-or-comment)))
             (re-search-forward "\\s>\\|\\s!\\|\\s\"" nil t)
-          (when (and (>= (length match) company-dabbrev-minimum-length)
-                     (not (gethash match symbol-hash)))
-            (puthash match t symbol-hash)
-            (push match symbols))))
+          (maybe-collect-match)))
       symbols)))
 
 (defun company-dabbrev--search (regexp &optional limit other-buffer-modes

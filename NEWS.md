@@ -2,6 +2,19 @@
 
 ## Next
 
+* `company-template-c-like-templatify` does not replace the default argument
+  values with `argN` anymore
+  ([#336](https://github.com/company-mode/company-mode/issues/336)). This
+  affects `company-clang` and all third-party backends that use this function.
+* Likewise for `company-clang-objc-templatify`.
+* `company-template-add-field` calling convention has changed.
+* New user option `company-dabbrev-ignore-invisible`.
+* `company-ropemacs` was removed. `ropemacs` supports completion via
+  `completion-at-point-functions` starting with version 0.8.
+* `company-pysmell` was removed.
+* `company-select-next`, `company-select-previous`,
+  `company-select-next-or-abort`, `company-select-previous-or-abort` and
+  `company-complete-common-or-cycle` accept a numeric argument.
 * The documentation buffer window can be scrolled with the mouse wheel.
 * New command `company-diag`. Use it in bug reports.
 

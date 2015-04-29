@@ -313,8 +313,6 @@ This doesn't include the margins and the scroll bar."
     (company-keywords . "Programming language keywords")
     (company-nxml . "nxml")
     (company-oddmuse . "Oddmuse")
-    (company-pysmell . "PySmell")
-    (company-ropemacs . "ropemacs")
     (company-semantic . "Semantic")
     (company-tempo . "Tempo templates")
     (company-xcode . "Xcode")))
@@ -333,7 +331,7 @@ This doesn't include the margins and the scroll bar."
                               company-bbdb
                               company-nxml company-css
                               company-eclim company-semantic company-clang
-                              company-xcode company-ropemacs company-cmake
+                              company-xcode company-cmake
                               company-capf
                               (company-dabbrev-code company-gtags company-etags
                                company-keywords)
@@ -357,8 +355,9 @@ text immediately before point.  Returning nil from this command passes
 control to the next back-end.  The function should return `stop' if it
 should complete but cannot (e.g. if it is in the middle of a string).
 Instead of a string, the back-end may return a cons where car is the prefix
-and cdr is used in `company-minimum-prefix-length' test.  It must be either
-number or t, and in the latter case the test automatically succeeds.
+and cdr is used instead of the actual prefix length in the comparison
+against `company-minimum-prefix-length'.  It must be either number or t,
+and in the latter case the test automatically succeeds.
 
 `candidates': The second argument is the prefix to be completed.  The
 return value should be a list of candidates that match the prefix.
@@ -724,7 +723,7 @@ asynchronous call into synchronous.")
   :package-version '(company . "0.8.10"))
 
 (defvar company-lighter '(" "
-                          (company-backend
+                          (company-candidates
                            (:eval
                             (if (consp company-backend)
                                 (company--group-lighter (nth company-selection
@@ -998,26 +997,26 @@ means that `company-mode' is always turned on except in `message-mode' buffers."
       (cons
        :async
        (lambda (callback)
-         (let* (lst pending
+         (let* (lst
+                (pending (mapcar #'car pairs))
                 (finisher (lambda ()
                             (unless pending
                               (funcall callback
                                        (funcall merger
                                                 (nreverse lst)))))))
            (dolist (pair pairs)
-             (let ((val (car pair))
-                   (mapper (cdr pair)))
+             (push nil lst)
+             (let* ((cell lst)
+                    (val (car pair))
+                    (mapper (cdr pair))
+                    (this-finisher (lambda (res)
+                                     (setq pending (delq val pending))
+                                     (setcar cell (funcall mapper res))
+                                     (funcall finisher))))
                (if (not (eq :async (car-safe val)))
-                   (push (funcall mapper val) lst)
-                 (push nil lst)
-                 (let ((cell lst)
-                       (fetcher (cdr val)))
-                   (push fetcher pending)
-                   (funcall fetcher
-                            (lambda (res)
-                              (setq pending (delq fetcher pending))
-                              (setcar cell (funcall mapper res))
-                              (funcall finisher)))))))))))))
+                   (funcall this-finisher val)
+                 (let ((fetcher (cdr val)))
+                   (funcall fetcher this-finisher)))))))))))
 
 (defun company--prefix-str (prefix)
   (or (car-safe prefix) prefix))
@@ -1059,14 +1058,14 @@ Controlled by `company-auto-complete'.")
   (substring str (length company-prefix)))
 
 (defun company--insert-candidate (candidate)
-  (setq candidate (substring-no-properties
-                   (if (consp candidate) (car candidate) candidate)))
-  ;; XXX: Return value we check here is subject to change.
-  (if (eq (company-call-backend 'ignore-case) 'keep-prefix)
-      (insert (company-strip-prefix candidate))
-    (unless (equal company-prefix candidate)
-      (delete-region (- (point) (length company-prefix)) (point))
-      (insert candidate))))
+  (when (> (length candidate) 0)
+    (setq candidate (substring-no-properties candidate))
+    ;; XXX: Return value we check here is subject to change.
+    (if (eq (company-call-backend 'ignore-case) 'keep-prefix)
+        (insert (company-strip-prefix candidate))
+      (unless (equal company-prefix candidate)
+        (delete-region (- (point) (length company-prefix)) (point))
+        (insert candidate)))))
 
 (defmacro company-with-candidate-inserted (candidate &rest body)
   "Evaluate BODY with CANDIDATE temporarily inserted.
@@ -1945,33 +1944,40 @@ followed by `company-search-toggle-filtering'."
 (defvar company-tooltip-offset 0)
 (make-variable-buffer-local 'company-tooltip-offset)
 
-(defun company-select-next ()
-  "Select the next candidate in the list."
-  (interactive)
-  (when (company-manual-begin)
-    (company-set-selection (1+ company-selection))))
+(defun company-select-next (&optional arg)
+  "Select the next candidate in the list.
 
-(defun company-select-previous ()
-  "Select the previous candidate in the list."
-  (interactive)
+With ARG, move by that many elements."
+  (interactive "p")
   (when (company-manual-begin)
-    (company-set-selection (1- company-selection))))
+    (company-set-selection (+ (or arg 1) company-selection))))
 
-(defun company-select-next-or-abort ()
+(defun company-select-previous (&optional arg)
+  "Select the previous candidate in the list.
+
+With ARG, move by that many elements."
+  (interactive "p")
+  (company-select-next (if arg (- arg) -1)))
+
+(defun company-select-next-or-abort (&optional arg)
   "Select the next candidate if more than one, else abort
-and invoke the normal binding."
-  (interactive)
+and invoke the normal binding.
+
+With ARG, move by that many elements."
+  (interactive "p")
   (if (> company-candidates-length 1)
-      (company-select-next)
+      (company-select-next arg)
     (company-abort)
     (company--unread-last-input)))
 
-(defun company-select-previous-or-abort ()
+(defun company-select-previous-or-abort (&optional arg)
   "Select the previous candidate if more than one, else abort
-and invoke the normal binding."
-  (interactive)
+and invoke the normal binding.
+
+With ARG, move by that many elements."
+  (interactive "p")
   (if (> company-candidates-length 1)
-      (company-select-previous)
+      (company-select-previous arg)
     (company-abort)
     (company--unread-last-input)))
 
@@ -2049,22 +2055,22 @@ and invoke the normal binding."
   "Insert the common part of all candidates."
   (interactive)
   (when (company-manual-begin)
-    (let ((item (car company-candidates)))
-      (if (and (not (cdr company-candidates))
-               (equal company-common
-                      (if (consp item) (car item) item)))
-          (company-complete-selection)
-        (when company-common
-          (company--insert-candidate company-common))))))
+    (if (and (not (cdr company-candidates))
+             (equal company-common (car company-candidates)))
+        (company-complete-selection)
+      (company--insert-candidate company-common))))
 
-(defun company-complete-common-or-cycle ()
-  "Insert the common part of all candidates, or select the next one."
-  (interactive)
+(defun company-complete-common-or-cycle (&optional arg)
+  "Insert the common part of all candidates, or select the next one.
+
+With ARG, move by that many elements."
+  (interactive "p")
   (when (company-manual-begin)
     (let ((tick (buffer-chars-modified-tick)))
       (call-interactively 'company-complete-common)
       (when (eq tick (buffer-chars-modified-tick))
-        (let ((company-selection-wrap-around t))
+        (let ((company-selection-wrap-around t)
+              (current-prefix-arg arg))
           (call-interactively 'company-select-next))))))
 
 (defun company-complete ()
@@ -2278,21 +2284,30 @@ If SHOW-VERSION is non-nil, show the version in the echo area."
       (lm-version))))
 
 (defun company-diag ()
-  (interactive)
   "Pop a buffer with information about completions at point."
+  (interactive)
   (let* ((bb company-backends)
          backend
          (prefix (cl-loop for b in bb
                           thereis (let ((company-backend b))
                                     (setq backend b)
                                     (company-call-backend 'prefix))))
-         cc)
+         cc annotations)
     (when (stringp prefix)
-      (setq cc (let ((company-backend backend))
-                 (company-call-backend 'candidates prefix))))
+      (let ((company-backend backend))
+        (setq cc (company-call-backend 'candidates prefix)
+              annotations
+              (mapcar
+               (lambda (c) (cons c (company-call-backend 'annotation c)))
+               cc))))
     (pop-to-buffer (get-buffer-create "*company-diag*"))
     (setq buffer-read-only nil)
     (erase-buffer)
+    (insert (format "Emacs %s (%s) of %s on %s"
+                    emacs-version system-configuration
+                    (format-time-string "%Y-%m-%d" emacs-build-time)
+                    emacs-build-system))
+    (insert "\nCompany " (company-version) "\n\n")
     (insert "company-backends: " (pp-to-string bb))
     (insert "\n")
     (insert "Used backend: " (pp-to-string backend))
@@ -2302,13 +2317,11 @@ If SHOW-VERSION is non-nil, show the version in the echo area."
     (insert (message  "Completions:"))
     (unless cc (insert " none"))
     (save-excursion
-      (let ((company-backend backend))
-        (dolist (c cc)
-          (insert "\n  " (prin1-to-string c))
-          (let ((ann (company-call-backend 'annotation)))
-            (when ann
-              (insert " " (prin1-to-string ann))))))
-      (special-mode))))
+      (dolist (c annotations)
+        (insert "\n  " (prin1-to-string (car c)))
+        (when (cdr c)
+          (insert " " (prin1-to-string (cdr c))))))
+    (special-mode)))
 
 ;;; pseudo-tooltip ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
