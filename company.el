@@ -650,7 +650,7 @@ asynchronous call into synchronous.")
 
 (defvar company-accept-and-insert-list '(" " "." "," "/" ";" ":" "?" "!" "-" "="
                                          "[" "]" "(" ")" "{" "}" "|" "\\" "'" "`"
-                                         "<" ">" "\M-(" "\""
+                                         "<" ">" "\M-(" "\"" "_" "+" "~"
                                          "\C-a" "\C-e" "\C-f" "\C-b" "\C-n"
                                          "\C-p" "\M-f" "\M-b" "\M-a" "\M-e" ))
 (defvar company-reject-and-insert-list nil)
