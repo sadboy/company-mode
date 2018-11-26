@@ -97,7 +97,7 @@ buffer-local wherever it is set."
 
 (defface company-tooltip
   '((default :foreground "black"
-      :weight normal
+      :weight normal :italic nil
       :underline nil :overline nil :strike-through nil)
     (((class color) (min-colors 88) (background light))
      (:background "cornsilk"))
