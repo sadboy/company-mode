@@ -1,6 +1,6 @@
-;;; company-keywords.el --- A company back-end for programming language keywords
+;;; company-keywords.el --- A company backend for programming language keywords
 
-;; Copyright (C) 2009-2011  Free Software Foundation, Inc.
+;; Copyright (C) 2009-2011, 2016  Free Software Foundation, Inc.
 
 ;; Author: Nikolaj Schumacher
 
@@ -35,13 +35,16 @@
 (defvar company-keywords-alist
   ;; Please contribute corrections or additions.
   `((c++-mode
-     "asm" "auto" "bool" "break" "case" "catch" "char" "class" "const"
-     "const_cast" "continue" "default" "delete" "do" "double" "dynamic_cast"
-     "else" "enum" "explicit" "export" "extern" "false" "float" "for" "friend"
-     "goto" "if" "inline" "int" "long" "mutable" "namespace" "new"
-     "operator" "private" "protected" "public" "register" "reinterpret_cast"
-     "return" "short" "signed" "sizeof" "static" "static_cast" "struct" "switch"
-     "template" "this" "throw" "true" "try" "typedef" "typeid" "typename"
+     "alignas" "alignof" "asm" "auto" "bool" "break" "case" "catch" "char"
+     "char16_t" "char32_t" "class" "const" "const_cast" "constexpr" "continue"
+     "decltype" "default" "delete" "do" "double" "dynamic_cast" "else" "enum"
+     "explicit" "export" "extern" "false" "final" "float" "for" "friend"
+     "goto" "if" "inline" "int" "long" "mutable" "namespace" "new" "noexcept"
+     "nullptr" "operator" "override"
+     "private" "protected" "public" "register" "reinterpret_cast"
+     "return" "short" "signed" "sizeof" "static" "static_assert"
+     "static_cast" "struct" "switch" "template" "this" "thread_local"
+     "throw" "true" "try" "typedef" "typeid" "typename"
      "union" "unsigned" "using" "virtual" "void" "volatile" "wchar_t" "while")
     (c-mode
      "auto" "break" "case" "char" "const" "continue" "default" "do"
@@ -138,6 +141,16 @@
       "sum_suffix" "system_clock" "tan" "tanh" "target" "template" "then"
       "tiny" "transfer" "transpose" "trim" "true" "type" "ubound" "unpack"
       "use" "value" "verify" "volatile" "wait" "where" "while" "with" "write"))
+    (go-mode
+     ;; 1. Keywords ref: https://golang.org/ref/spec#Keywords
+     ;; 2. Builtin functions and types ref: https://golang.org/pkg/builtin/
+     "append" "bool" "break" "byte" "cap" "case" "chan" "close" "complex" "complex128"
+     "complex64" "const" "continue" "copy" "default" "defer" "delete" "else" "error"
+     "fallthrough" "false" "float32" "float64" "for" "func" "go" "goto" "if" "imag"
+     "import" "int" "int16" "int32" "int64" "int8" "interface" "len" "make"
+     "map" "new" "nil" "package" "panic" "print" "println" "range" "real" "recover"
+     "return" "rune" "select" "string" "struct" "switch" "true" "type" "uint" "uint16"
+     "uint32" "uint64" "uint8" "uintptr" "var")
     (java-mode
      "abstract" "assert" "boolean" "break" "byte" "case" "catch" "char" "class"
      "continue" "default" "do" "double" "else" "enum" "extends" "final"
@@ -146,9 +159,19 @@
      "return" "short" "static" "strictfp" "super" "switch" "synchronized"
      "this" "throw" "throws" "transient" "try" "void" "volatile" "while")
     (javascript-mode
-     "break" "catch" "const" "continue" "delete" "do" "else" "export" "for"
-     "function" "if" "import" "in" "instanceOf" "label" "let" "new" "return"
-     "switch" "this" "throw" "try" "typeof" "var" "void" "while" "with" "yield")
+     ;; https://tc39.github.io/ecma262/ + async, static and undefined
+     "async" "await" "break" "case" "catch" "class" "const" "continue"
+     "debugger" "default" "delete" "do" "else" "enum" "export" "extends" "false"
+     "finally" "for" "function" "if" "import" "in" "instanceof" "let" "new"
+     "null" "return" "static" "super" "switch" "this" "throw" "true" "try"
+     "typeof" "undefined" "var" "void" "while" "with" "yield")
+    (kotlin-mode
+     "abstract" "annotation" "as" "break" "by" "catch" "class" "companion"
+     "const" "constructor" "continue" "data" "do" "else" "enum" "false" "final"
+     "finally" "for" "fun" "if" "import" "in" "init" "inner" "interface"
+     "internal" "is" "lateinit" "nested" "null" "object" "open" "out" "override"
+     "package" "private" "protected" "public" "return" "super" "this" "throw"
+     "trait" "true" "try" "typealias" "val" "var" "when" "while")
     (objc-mode
      "@catch" "@class" "@encode" "@end" "@finally" "@implementation"
      "@interface" "@private" "@protected" "@protocol" "@public"
@@ -199,25 +222,72 @@
      "print" "private" "protected" "public" "require" "require_once" "return"
      "static" "switch" "this" "throw" "try" "unset" "use" "var" "while" "xor")
     (python-mode
-     "and" "assert" "break" "class" "continue" "def" "del" "elif" "else"
-     "except" "exec" "finally" "for" "from" "global" "if" "import" "in" "is"
-     "lambda" "not" "or" "pass" "print" "raise" "return" "try" "while" "yield")
+     ;; https://docs.python.org/3/reference/lexical_analysis.html#keywords
+     "False" "None" "True" "and" "as" "assert" "break" "class" "continue" "def"
+     "del" "elif" "else" "except" "exec" "finally" "for" "from" "global" "if"
+     "import" "in" "is" "lambda" "nonlocal" "not" "or" "pass" "print" "raise"
+     "return" "try" "while" "with" "yield")
     (ruby-mode
      "BEGIN" "END" "alias" "and"  "begin" "break" "case" "class" "def" "defined?"
      "do" "else" "elsif"  "end" "ensure" "false" "for" "if" "in" "module"
      "next" "nil" "not" "or" "redo" "rescue" "retry" "return" "self" "super"
      "then" "true" "undef" "unless" "until" "when" "while" "yield")
+    ;; From https://doc.rust-lang.org/grammar.html#keywords
+    ;; but excluding unused reserved words: https://www.reddit.com/r/rust/comments/34fq0k/is_there_a_good_list_of_rusts_keywords/cqucvnj
+    (rust-mode
+     "Self"
+     "as" "box" "break" "const" "continue" "crate" "else" "enum" "extern"
+     "false" "fn" "for" "if" "impl" "in" "let" "loop" "macro" "match" "mod"
+     "move" "mut" "pub" "ref" "return" "self" "static" "struct" "super"
+     "trait" "true" "type" "unsafe" "use" "where" "while")
+    (scala-mode
+     "abstract" "case" "catch" "class" "def" "do" "else" "extends" "false"
+     "final" "finally" "for" "forSome" "if" "implicit" "import" "lazy" "match"
+     "new" "null" "object" "override" "package" "private" "protected"
+     "return" "sealed" "super" "this" "throw" "trait" "true" "try" "type" "val"
+     "var" "while" "with" "yield")
+    (swift-mode
+     "Protocol" "Self" "Type" "and" "as" "assignment" "associatedtype"
+     "associativity" "available" "break" "case" "catch" "class" "column" "continue"
+     "convenience" "default" "defer" "deinit" "didSet" "do" "dynamic" "dynamicType"
+     "else" "elseif" "endif" "enum" "extension" "fallthrough" "false" "file"
+     "fileprivate" "final" "for" "func" "function" "get" "guard" "higherThan" "if"
+     "import" "in" "indirect" "infix" "init" "inout" "internal" "is" "lazy" "left"
+     "let" "line" "lowerThan" "mutating" "nil" "none" "nonmutating" "open"
+     "operator" "optional" "override" "postfix" "precedence" "precedencegroup"
+     "prefix" "private" "protocol" "public" "repeat" "required" "rethrows" "return"
+     "right" "selector" "self" "set" "static" "struct" "subscript" "super" "switch"
+     "throw" "throws" "true" "try" "typealias" "unowned" "var" "weak" "where"
+     "while" "willSet")
+    (julia-mode
+     "abstract" "break" "case" "catch" "const" "continue" "do" "else" "elseif"
+     "end" "eval" "export" "false" "finally" "for" "function" "global" "if"
+     "ifelse" "immutable" "import" "importall" "in" "let" "macro" "module"
+     "otherwise" "quote" "return" "switch" "throw" "true" "try" "type"
+     "typealias" "using" "while"
+     )
+    ;; From https://github.com/apache/thrift/blob/master/contrib/thrift.el
+    (thrift-mode
+     "binary" "bool" "byte" "const" "double" "enum" "exception" "extends"
+     "i16" "i32" "i64" "include" "list" "map" "oneway" "optional" "required"
+     "service" "set" "string" "struct" "throws" "typedef" "void"
+     )
     ;; aliases
     (js2-mode . javascript-mode)
+    (js2-jsx-mode . javascript-mode)
     (espresso-mode . javascript-mode)
     (js-mode . javascript-mode)
+    (js-jsx-mode . javascript-mode)
+    (rjsx-mode . javascript-mode)
     (cperl-mode . perl-mode)
-    (jde-mode . java-mode))
+    (jde-mode . java-mode)
+    (ess-julia-mode . julia-mode)
+    (enh-ruby-mode . ruby-mode))
   "Alist mapping major-modes to sorted keywords for `company-keywords'.")
 
 ;;;###autoload
 (defun company-keywords (command &optional arg &rest ignored)
-  "`company-mode' back-end for programming language keywords."
+  "`company-mode' backend for programming language keywords."
   (interactive (list 'interactive))
   (cl-case command
     (interactive (company-begin-backend 'company-keywords))

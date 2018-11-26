@@ -1,6 +1,6 @@
-;;; company-cmake.el --- company-mode completion back-end for CMake
+;;; company-cmake.el --- company-mode completion backend for CMake
 
-;; Copyright (C) 2013-2014  Free Software Foundation, Inc.
+;; Copyright (C) 2013-2014, 2017-2018  Free Software Foundation, Inc.
 
 ;; Author: Chen Bin <chenbin DOT sh AT gmail>
 ;; Version: 0.2
@@ -29,7 +29,7 @@
 (require 'cl-lib)
 
 (defgroup company-cmake nil
-  "Completion back-end for CMake."
+  "Completion backend for CMake."
   :group 'company)
 
 (defcustom company-cmake-executable
@@ -177,8 +177,15 @@ They affect which types of symbols we get completion candidates for.")
        (buffer-substring-no-properties (line-beginning-position)
                                        (point-max))))))
 
+(defun company-cmake-prefix-dollar-brace-p ()
+  "Test if the current symbol follows ${."
+  (save-excursion
+    (skip-syntax-backward "w_")
+    (and (eq (char-before (point)) ?\{)
+         (eq (char-before (1- (point))) ?$))))
+
 (defun company-cmake (command &optional arg &rest ignored)
-  "`company-mode' completion back-end for CMake.
+  "`company-mode' completion backend for CMake.
 CMake is a cross-platform, open-source make system."
   (interactive (list 'interactive))
   (cl-case command
@@ -187,7 +194,8 @@ CMake is a cross-platform, open-source make system."
             (unless company-cmake-executable
               (error "Company found no cmake executable"))))
     (prefix (and (memq major-mode company-cmake-modes)
-                 (not (company-in-string-or-comment))
+                 (or (not (company-in-string-or-comment))
+                     (company-cmake-prefix-dollar-brace-p))
                  (company-grab-symbol)))
     (candidates (company-cmake--candidates arg))
     (meta (company-cmake--meta arg))

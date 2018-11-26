@@ -1,6 +1,6 @@
-;;; company-elisp.el --- company-mode completion back-end for Emacs Lisp -*- lexical-binding: t -*-
+;;; company-elisp.el --- company-mode completion backend for Emacs Lisp -*- lexical-binding: t -*-
 
-;; Copyright (C) 2009, 2011-2013  Free Software Foundation, Inc.
+;; Copyright (C) 2009, 2011-2013, 2017  Free Software Foundation, Inc.
 
 ;; Author: Nikolaj Schumacher
 
@@ -22,6 +22,7 @@
 
 ;;; Commentary:
 ;;
+;; In newer versions of Emacs, company-capf is used instead.
 
 ;;; Code:
 
@@ -31,7 +32,7 @@
 (require 'find-func)
 
 (defgroup company-elisp nil
-  "Completion back-end for Emacs Lisp."
+  "Completion backend for Emacs Lisp."
   :group 'company)
 
 (defcustom company-elisp-detect-function-context t
@@ -193,7 +194,7 @@ first in the candidates list."
 
 ;;;###autoload
 (defun company-elisp (command &optional arg &rest ignored)
-  "`company-mode' completion back-end for Emacs Lisp."
+  "`company-mode' completion backend for Emacs Lisp."
   (interactive (list 'interactive))
   (cl-case command
     (interactive (company-begin-backend 'company-elisp))
