@@ -1,2 +1,4 @@
+*~
 *.elc
 ert.el
+loaddefs.el
