@@ -7,9 +7,9 @@ AUTOLOAD=--eval '(let ((generated-autoload-file (expand-file-name "$@")) \
   (save-buffers-kill-emacs t))'
 ERT_URL=http://git.savannah.gnu.org/cgit/emacs.git/plain/lisp/emacs-lisp/ert.el?h=emacs-24.3
 
-all: compile autoloads
+all: compile
 
-.PHONY: ert test test-batch compile autoloads
+.PHONY: ert test test-batch compile
 
 package: *.el
 	@ver=`grep -o "Version: .*" company.el | cut -c 10-`; \
@@ -42,7 +42,7 @@ test-batch:
 compile:
 	-@${EMACS} -Q --batch ${LOADPATH} -f batch-byte-compile company.el company-*.el
 
-autoloads: loaddefs.el
+# autoloads: loaddefs.el
 
-loaddefs.el: company*.el
-	${EMACS} -Q --batch ${LOADPATH} $(AUTOLOAD) $?
+# loaddefs.el: company*.el
+# 	${EMACS} -Q --batch ${LOADPATH} $(AUTOLOAD) $?
